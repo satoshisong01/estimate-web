@@ -1,26 +1,77 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
-  --background: #ffffff;
+  --background: #f3f4f6;
   --foreground: #171717;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* ▼▼▼ A4 용지 스타일 ▼▼▼ */
+.print-page {
+  width: 210mm;
+  height: 297mm;
+  /* padding: 10mm; (사용자 설정 유지) */
+  margin: 0 auto;
+
+  /* 화면에서는 흰색 종이처럼 보이게 함 */
+  background: white;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.print-page table,
+.print-page table input {
+  font-size: 12px !important; /* 원하시는 크기 (10px은 너무 작을 수 있어 11~12px 추천) */
+  line-height: 1.2 !important; /* 줄 간격도 맞춰줍니다 */
+}
+
+/* ▼▼▼ 인쇄 전용 설정 ▼▼▼ */
+@media print {
+  @page {
+    size: A4;
+    margin: 0 !important;
+  }
+  .print-page table,
+  .print-page table input {
+    font-size: 12px !important;
+  }
+
+  body {
+    background: none;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-page {
+    margin: 0 !important;
+    box-shadow: none !important;
+    page-break-after: always;
+
+    /* ★ 핵심: 인쇄 시에는 배경색을 아예 없앰 (흰색 박스 문제 해결) */
+    background: none !important;
+  }
+
+  .print-page:last-child {
+    page-break-after: auto !important;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
 }
