@@ -1,108 +1,120 @@
 import Link from 'next/link';
-import { executeQuery } from '@/lib/db';
 import { getServerSession } from 'next-auth';
-import DeleteQuoteButton from '@/components/DeleteQuoteButton';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { redirect } from 'next/navigation';
+import { executeQuery } from '@/lib/db';
 
-// 숫자를 천 단위 콤마 형식으로 변환 (예: 56,000,000)
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('ko-KR').format(amount);
-};
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const session = await getServerSession();
+  const session = await getServerSession(authOptions);
 
-  // 비로그인 상태 처리
   if (!session) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <h2 className="text-xl font-bold">로그인이 필요한 서비스입니다.</h2>
-        <Link
-          href="/api/auth/signin"
-          className="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          로그인하러 가기
-        </Link>
-      </div>
-    );
+    redirect('/api/auth/signin');
   }
 
-  // DB에서 견적서 목록 조회 (최신순 정렬)
-  const quotations: any = await executeQuery(
-    'SELECT * FROM est_quotations ORDER BY created_at DESC',
-  );
+  // ★ 수정됨: est_quotations 테이블 사용 & editor_id로 조인
+  // (컬럼명은 실제 DB에 맞춰 snake_case로 작성했습니다)
+  const query = `
+    SELECT 
+      q.id, 
+      q.title, 
+      q.customer_name, 
+      q.quotation_date, 
+      q.grand_total, 
+      q.created_at,
+      u.name as editor_name
+    FROM est_quotations q
+    LEFT JOIN est_users u ON q.editor_id = u.id::text
+    ORDER BY q.created_at DESC
+  `;
+
+  const estimates = await executeQuery(query);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto min-h-screen bg-gray-50">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">견적서 관리 대장</h1>
-        <Link
-          href="/estimate/new"
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium transition-colors shadow-sm"
-        >
-          + 새 견적서 작성
-        </Link>
+    <div className="max-w-7xl mx-auto p-8">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">견적서 관리 대장</h1>
+        <div className="flex gap-4 items-center">
+          <span className="text-gray-600">
+            안녕하세요, <strong>{session.user?.name}</strong>님
+          </span>
+          <Link
+            href="/estimate/new"
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+          >
+            + 새 견적서 작성
+          </Link>
+        </div>
       </div>
 
-      <div className="bg-white shadow-md rounded-lg overflow-hidden border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-100">
+      <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-200">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-gray-100 text-gray-700 uppercase font-bold">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                No.
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                견적명
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                수신(업체명)
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                견적일
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                총 합계(원)
-              </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                관리
-              </th>
+              <th className="px-6 py-3 w-16 text-center">No.</th>
+              <th className="px-6 py-3">견적명</th>
+              <th className="px-6 py-3">수신(업체명)</th>
+              <th className="px-6 py-3 w-32">견적일</th>
+              <th className="px-6 py-3 text-right">총 합계(원)</th>
+              <th className="px-6 py-3 text-center">최종 수정자</th>
+              <th className="px-6 py-3 text-center w-24">관리</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {quotations.length === 0 ? (
+          <tbody className="divide-y divide-gray-200">
+            {estimates.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-6 py-10 text-center text-gray-500"
                 >
-                  작성된 견적서가 없습니다.
+                  등록된 견적서가 없습니다.
                 </td>
               </tr>
             ) : (
-              quotations.map((q: any) => (
-                <tr key={q.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {q.id}
+              estimates.map((est: any, idx: number) => (
+                <tr key={est.id} className="hover:bg-gray-50 transition">
+                  <td className="px-6 py-4 text-center text-gray-500">
+                    {estimates.length - idx}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <td className="px-6 py-4 font-medium text-gray-900">
                     <Link
-                      href={`/estimate/${q.id}`}
-                      className="hover:text-blue-600 hover:underline"
+                      href={`/estimate/${est.id}`}
+                      className="hover:underline hover:text-blue-600 block"
                     >
-                      {q.title}
+                      {est.title || '(제목 없음)'}
                     </Link>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {q.customer_name}
+                  <td className="px-6 py-4 text-gray-600">
+                    {est.customer_name}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(q.quotation_date).toLocaleDateString()}
+                  <td className="px-6 py-4 text-gray-500">
+                    {est.quotation_date
+                      ? new Date(est.quotation_date).toLocaleDateString()
+                      : '-'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-800">
-                    {formatCurrency(Number(q.grand_total))}
+                  <td className="px-6 py-4 text-right font-bold text-gray-800">
+                    {Number(est.grand_total || 0).toLocaleString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
-                    {/* 클라이언트 컴포넌트인 삭제 버튼 사용 */}
-                    <DeleteQuoteButton id={q.id} />
+
+                  {/* ▼ 수정자 이름 표시 */}
+                  <td className="px-6 py-4 text-center">
+                    {est.editor_name ? (
+                      <span className="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full font-medium">
+                        {est.editor_name}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">-</span>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4 text-center">
+                    <Link
+                      href={`/estimate/${est.id}`}
+                      className="inline-block text-blue-600 hover:text-blue-800 font-medium text-sm border border-blue-200 px-3 py-1.5 rounded hover:bg-blue-50 whitespace-nowrap"
+                    >
+                      수정/조회
+                    </Link>
                   </td>
                 </tr>
               ))
