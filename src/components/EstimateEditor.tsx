@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import styles from './EstimateEditor.module.css'; // ★ 이 줄을 꼭 추가하세요!
 
 // --- 타입 정의 ---
 interface EstimateItem {
@@ -414,7 +415,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           isActive ? 'block' : 'hidden'
         } ${isPrintChecked ? 'print:block print-visible' : 'print:hidden print-hidden'}`}
       >
-        <div className="p-8 h-full min-h-[900px] flex flex-col items-center">
+        <div className={`p-8 h-full min-h-[900px] flex flex-col items-center ${styles.paperBorder}`}>
           <h2 className="text-3xl font-extrabold mb-8 border-b-2 border-black pb-2 w-full text-center">
             {title}
           </h2>
@@ -537,7 +538,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
       {/* 1. 견적서 표지 (Main) */}
       <div className={`${getDisplayClass('cover', printOptions.cover)}`}>
-        <div className="p-10 min-h-[1050px] relative flex flex-col justify-between">
+        <div className={`p-10 min-h-[1050px] relative flex flex-col justify-between ${styles.paperBorder}`}>
           <div>
             <div className="text-center mb-10 mt-4">
               <h1 className="text-4xl font-extrabold tracking-[1rem] underline decoration-4 underline-offset-8">
@@ -745,7 +746,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       <div
         className={`break-before-page ${getDisplayClass('detail', printOptions.detail)}`}
       >
-        <div className="p-10 min-h-[1050px] flex flex-col">
+        <div className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder}`}>
           <div className="text-center mb-8 mt-4">
             <h2 className="text-3xl font-extrabold tracking-widest border-b-2 border-black inline-block pb-2">
               세부 산출내역서
