@@ -14,7 +14,6 @@ export async function PUT(
     if (!session?.user?.email)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 1. 현재 사용자 ID 찾기
     const userResult = await executeQuery(
       'SELECT id FROM est_users WHERE email = $1',
       [session.user.email],
@@ -31,17 +30,15 @@ export async function PUT(
       totalAmount,
       vat,
       grandTotal,
-      expiryDate,
-      conditions,
       imageLayout,
       imageComponent,
       imageMaintenance,
       imageSchedule,
+      // ★ 여기서도 memo를 그대로 받음
+      memo,
     } = body;
 
-    const memoData = JSON.stringify({ expiryDate, conditions });
-
-    // 2. 견적서 메인 업데이트 (editor_id=$14 추가됨!)
+    // 업데이트 쿼리 (memo=$8 사용)
     await executeQuery(
       `UPDATE est_quotations 
        SET title=$1, customer_name=$2, customer_ref=$3, quotation_date=$4, 
@@ -57,23 +54,22 @@ export async function PUT(
         totalAmount,
         vat,
         grandTotal,
-        memoData,
+        memo, // $8: memo 업데이트
         id, // $9
         imageLayout,
         imageComponent,
         imageMaintenance,
         imageSchedule,
-        userId, // $14: editor_id
+        userId, // $14
       ],
     );
 
-    // 3. 기존 품목 삭제 (quotation_id 사용!)
+    // 기존 품목 삭제 후 재등록
     await executeQuery(
       'DELETE FROM est_quotation_items WHERE quotation_id = $1',
       [id],
     );
 
-    // 4. 품목 재등록 (기존 로직 유지)
     if (items && items.length > 0) {
       const itemInsertPromises = items.map((item: any, index: number) => {
         return executeQuery(
@@ -81,7 +77,7 @@ export async function PUT(
           (quotation_id, category, name, spec, unit, quantity, unit_price, supply_price, remarks, sort_order, section)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
-            id, // quotation_id
+            id,
             item.category || '',
             item.name,
             item.spec,

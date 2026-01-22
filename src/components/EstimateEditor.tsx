@@ -2,7 +2,47 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import styles from './EstimateEditor.module.css'; // ★ 이 줄을 꼭 추가하세요!
+import styles from './EstimateEditor.module.css';
+
+// --- [유틸] 숫자를 한글로 변환 ---
+function numberToKorean(number: number): string {
+  if (number === 0) return '영';
+  const units = ['', '만', '억', '조', '경'];
+  const digits = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
+  const tenUnits = ['', '십', '백', '천'];
+
+  let result = '';
+  let unitIndex = 0;
+  let numStr = number.toString();
+
+  while (numStr.length > 0) {
+    const chunk = numStr.slice(-4);
+    numStr = numStr.slice(0, -4);
+
+    let chunkToKorean = '';
+    let hasValue = false;
+
+    for (let i = 0; i < chunk.length; i++) {
+      const digit = parseInt(chunk.charAt(chunk.length - 1 - i), 10);
+      if (digit > 0) {
+        chunkToKorean = digits[digit] + tenUnits[i] + chunkToKorean;
+        hasValue = true;
+      }
+    }
+
+    if (hasValue) {
+      result = chunkToKorean + units[unitIndex] + result;
+    }
+    unitIndex++;
+  }
+
+  return result;
+}
+
+// --- [유틸] 콤마 관련 함수 ---
+const parseNumber = (value: string) => {
+  return Number(value.replace(/[^0-9]/g, ''));
+};
 
 // --- 타입 정의 ---
 interface EstimateItem {
@@ -16,34 +56,40 @@ interface EstimateItem {
   remarks: string;
 }
 
+interface ImageTab {
+  id: string;
+  label: string;
+  url: string;
+}
+
 interface EditorProps {
   initialData?: any;
 }
 
 interface ImageSectionProps {
-  title: string;
-  fieldName: string;
-  imageUrl: string;
+  tabData: ImageTab;
   isActive: boolean;
   isPrintChecked: boolean;
   onDelete: () => void;
-  // 수정됨: 파일을 직접 받도록 변경 (드래그앤드롭 대응)
   onUpload: (file: File) => void;
 }
 
-type TabType =
-  | 'cover'
-  | 'detail'
-  | 'layout'
-  | 'component'
-  | 'maintenance'
-  | 'schedule';
-
 export default function EstimateEditor({ initialData }: EditorProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>('cover');
 
-  const [printOptions, setPrintOptions] = useState({
+  const [coverLabel, setCoverLabel] = useState('1. 견적서(표지)');
+  const [detailLabel, setDetailLabel] = useState('2. 산출내역서');
+
+  const [imageTabs, setImageTabs] = useState<ImageTab[]>([
+    { id: 'layout', label: '3. 배치도', url: '' },
+    { id: 'component', label: '4. 주요구성품', url: '' },
+    { id: 'maintenance', label: '5. 유지관리', url: '' },
+    { id: 'schedule', label: '6. 추진일정', url: '' },
+  ]);
+
+  const [activeTabId, setActiveTabId] = useState<string>('cover');
+
+  const [printOptions, setPrintOptions] = useState<Record<string, boolean>>({
     cover: true,
     detail: true,
     layout: true,
@@ -52,6 +98,14 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     schedule: true,
   });
 
+  const defaultConditions = `1. 태양광 견적용량 : 806.4kW ( F1 건물위)
+2. 설치장소 : 씨와이오토텍 F1
+3. 견적유효기간 : 견적일로부터 30일
+4. 납기 : 발주 후 6개월 이내 (협의조정)
+5. 결제조건 : 협의
+6. 견적 별도항목 : 한전 시설부담금 및 기존 건물 구조보강비 (현장실측 후 산정)
+7. 하자보증 : 태양광 12년(성능보증 30년, 제품 보증 12년), 인버터 5년 무상 보증`;
+
   const [header, setHeader] = useState({
     title: initialData?.title || '',
     customerName: initialData?.customer_name || '',
@@ -59,16 +113,15 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     quotationDate: initialData?.quotation_date
       ? new Date(initialData.quotation_date).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
+    deliveryDate: initialData?.memo
+      ? JSON.parse(initialData.memo).deliveryDate || '발주 후 6개월 이내'
+      : '발주 후 6개월 이내',
     expiryDate: initialData?.memo
       ? JSON.parse(initialData.memo).expiryDate
-      : '견적 제출일로부터 30일',
+      : '견적일로부터 30일',
     conditions: initialData?.memo
       ? JSON.parse(initialData.memo).conditions
-      : '1. 결제조건 : 계약금 50%, 준공 후 50% (VAT 별도)\n2. 공사기간 : 계약 후 협의\n3. 특이사항 : 현장 여건에 따라 변동될 수 있음',
-    imageLayout: initialData?.image_layout || '',
-    imageComponent: initialData?.image_component || '',
-    imageMaintenance: initialData?.image_maintenance || '',
-    imageSchedule: initialData?.image_schedule || '',
+      : defaultConditions,
   });
 
   const [mainItems, setMainItems] = useState<EstimateItem[]>([]);
@@ -82,17 +135,18 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       const details = initialData.items.filter(
         (i: any) => i.section === 'detail',
       );
+
       setMainItems(
         mains.length > 0
           ? mains
           : [
               {
                 section: 'main',
-                category: '',
+                category: '태양광 설치공사',
                 name: '',
                 spec: '',
-                unit: '',
-                quantity: 0,
+                unit: '식',
+                quantity: 1,
                 unitPrice: 0,
                 remarks: '',
               },
@@ -118,11 +172,11 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       setMainItems([
         {
           section: 'main',
-          category: '',
+          category: '태양광 설치공사',
           name: '',
           spec: '',
-          unit: '',
-          quantity: 0,
+          unit: '식',
+          quantity: 1,
           unitPrice: 0,
           remarks: '',
         },
@@ -140,10 +194,76 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         },
       ]);
     }
+
+    if (initialData?.memo) {
+      try {
+        const memoObj = JSON.parse(initialData.memo);
+        if (memoObj.tabConfig) {
+          setCoverLabel(
+            memoObj.tabConfig.coverLabel ||
+              memoObj.tabConfig.coverTabLabel ||
+              '1. 견적서(표지)',
+          );
+          setDetailLabel(
+            memoObj.tabConfig.detailLabel ||
+              memoObj.tabConfig.detailTabLabel ||
+              '2. 산출내역서',
+          );
+
+          if (memoObj.tabConfig.imageTabs) {
+            setImageTabs(memoObj.tabConfig.imageTabs);
+            const newPrintOpts: Record<string, boolean> = {
+              cover: true,
+              detail: true,
+            };
+            memoObj.tabConfig.imageTabs.forEach((tab: ImageTab) => {
+              newPrintOpts[tab.id] = true;
+            });
+            setPrintOptions((prev) => ({ ...prev, ...newPrintOpts }));
+          }
+        } else {
+          const legacyTabs = [
+            {
+              id: 'layout',
+              label: '3. 배치도',
+              url: initialData.image_layout || '',
+            },
+            {
+              id: 'component',
+              label: '4. 주요구성품',
+              url: initialData.image_component || '',
+            },
+            {
+              id: 'maintenance',
+              label: '5. 유지관리',
+              url: initialData.image_maintenance || '',
+            },
+            {
+              id: 'schedule',
+              label: '6. 추진일정',
+              url: initialData.image_schedule || '',
+            },
+          ];
+          setImageTabs(legacyTabs);
+        }
+      } catch (e) {
+        console.error('Memo parse error', e);
+      }
+    }
   }, [initialData]);
 
+  const getDocumentNumber = () => {
+    if (initialData?.id) {
+      return `FIRST25-${String(initialData.id).padStart(3, '0')}`;
+    }
+    const date = new Date(header.quotationDate);
+    const year = String(date.getFullYear()).slice(2);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `FIRST${year}${month}${day}-01`;
+  };
+
   const [total, setTotal] = useState(0);
-  const [vat, setVat] = useState(0);
 
   useEffect(() => {
     const sum = mainItems.reduce(
@@ -151,7 +271,6 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       0,
     );
     setTotal(sum);
-    setVat(Math.floor(sum * 0.1));
   }, [mainItems]);
 
   const handleHeaderChange = (e: any) =>
@@ -192,8 +311,42 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       setTarget(targetItems.filter((_, i) => i !== index));
   };
 
-  // 수정됨: File 객체를 직접 받아서 업로드 처리
-  const handleFileUpload = async (file: File, fieldName: string) => {
+  const addImageTab = () => {
+    const newId = `custom_${Date.now()}`;
+    const newTab: ImageTab = {
+      id: newId,
+      label: '새 탭',
+      url: '',
+    };
+    setImageTabs([...imageTabs, newTab]);
+    setPrintOptions({ ...printOptions, [newId]: true });
+    setActiveTabId(newId);
+  };
+
+  const removeImageTab = (e: React.MouseEvent, idToRemove: string) => {
+    e.stopPropagation();
+    if (confirm('정말 이 탭을 삭제하시겠습니까? (이미지도 함께 삭제됩니다)')) {
+      const filtered = imageTabs.filter((t) => t.id !== idToRemove);
+      setImageTabs(filtered);
+      if (activeTabId === idToRemove) {
+        setActiveTabId('cover');
+      }
+    }
+  };
+
+  const updateTabLabel = (id: string, newLabel: string) => {
+    if (id === 'cover') setCoverLabel(newLabel);
+    else if (id === 'detail') setDetailLabel(newLabel);
+    else {
+      setImageTabs(
+        imageTabs.map((tab) =>
+          tab.id === id ? { ...tab, label: newLabel } : tab,
+        ),
+      );
+    }
+  };
+
+  const handleFileUpload = async (file: File, tabId: string) => {
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -202,8 +355,13 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         body: formData,
       });
       const data = await res.json();
-      if (data.success)
-        setHeader((prev) => ({ ...prev, [fieldName]: data.url }));
+      if (data.success) {
+        setImageTabs(
+          imageTabs.map((tab) =>
+            tab.id === tabId ? { ...tab, url: data.url } : tab,
+          ),
+        );
+      }
     } catch (err) {
       alert('업로드 실패');
     }
@@ -218,6 +376,13 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       ? `/api/estimate/${initialData.id}`
       : '/api/estimate/save';
     const method = isEditMode ? 'PUT' : 'POST';
+
+    const tabConfig = {
+      coverLabel,
+      detailLabel,
+      imageTabs,
+    };
+
     try {
       const res = await fetch(url, {
         method: method,
@@ -226,8 +391,18 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           ...header,
           items: allItems,
           totalAmount: total,
-          vat,
-          grandTotal: total + vat,
+          vat: Math.floor(total * 0.1),
+          grandTotal: Math.floor(total * 1.1),
+          imageLayout: imageTabs[0]?.url || '',
+          imageComponent: imageTabs[1]?.url || '',
+          imageMaintenance: imageTabs[2]?.url || '',
+          imageSchedule: imageTabs[3]?.url || '',
+          memo: JSON.stringify({
+            deliveryDate: header.deliveryDate,
+            expiryDate: header.expiryDate,
+            conditions: header.conditions,
+            tabConfig,
+          }),
         }),
       });
       if (res.ok) {
@@ -240,9 +415,12 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     }
   };
 
-  const getDisplayClass = (tabName: TabType, isPrintChecked: boolean) => {
-    const screenClass = activeTab === tabName ? 'block' : 'hidden';
-    const printClass = isPrintChecked
+  const getDisplayClass = (tabId: string) => {
+    const isActive = activeTabId === tabId;
+    const isPrint = printOptions[tabId] ?? true;
+
+    const screenClass = isActive ? 'block' : 'hidden';
+    const printClass = isPrint
       ? 'print:block print-visible'
       : 'print:hidden print-hidden';
     return `${screenClass} ${printClass}`;
@@ -250,17 +428,22 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
   const renderTable = (items: EstimateItem[], isDetail: boolean) => (
     <div className="w-full mb-4">
-      <table className="w-full border-collapse border border-black text-sm print:text-xs">
-        <thead className="print:bg-transparent">
+      <table className="w-full border-collapse border border-black text-[12px]">
+        <thead className="bg-gray-100 print:bg-transparent">
           <tr>
+            {/* ▼ [수정] 열 간격 최적화 (규격 최대화, 단위/수량 최소화) ▼ */}
             <th className="border border-black p-1 w-8">No</th>
-            <th className="border border-black p-1">품명/구분</th>
-            <th className="border border-black p-1">규격</th>
-            <th className="border border-black p-1 w-12">단위</th>
-            <th className="border border-black p-1 w-16">수량</th>
+            <th className="border border-black p-1 w-24">
+              {isDetail ? '품명' : '구 분'}
+            </th>
+            <th className="border border-black p-1">규 격</th>{' '}
+            {/* Width 지정 안 함 -> 남은 공간 최대 차지 */}
+            <th className="border border-black p-1 w-10">단위</th> {/* 작게 */}
+            <th className="border border-black p-1 w-14">수량</th> {/* 작게 */}
             <th className="border border-black p-1 w-24">단가</th>
-            <th className="border border-black p-1 w-24">공급가액</th>
-            <th className="border border-black p-1">비고</th>
+            <th className="border border-black p-1 w-24">금 액</th>
+            <th className="border border-black p-1 w-24">비고</th>{' '}
+            {/* 적당한 고정 너비 */}
             <th className="border border-black p-1 w-8 no-print">삭제</th>
           </tr>
         </thead>
@@ -272,11 +455,17 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               </td>
               <td className="border border-gray-400 p-0">
                 <input
-                  className="w-full p-1 outline-none bg-transparent"
-                  value={item.name}
+                  className={`w-full p-1 outline-none bg-transparent ${!isDetail ? 'text-center font-bold' : ''}`}
+                  value={isDetail ? item.name : item.category}
                   onChange={(e) =>
-                    handleItemChange(isDetail, idx, 'name', e.target.value)
+                    handleItemChange(
+                      isDetail,
+                      idx,
+                      isDetail ? 'name' : 'category',
+                      e.target.value,
+                    )
                   }
+                  placeholder=""
                 />
               </td>
               <td className="border border-gray-400 p-0">
@@ -299,35 +488,41 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               </td>
               <td className="border border-gray-400 p-0">
                 <input
-                  type="number"
+                  type="text"
                   className="w-full p-1 outline-none text-right bg-transparent"
-                  value={item.quantity}
+                  value={
+                    item.quantity === 0 ? '' : item.quantity.toLocaleString()
+                  }
                   onChange={(e) =>
                     handleItemChange(
                       isDetail,
                       idx,
                       'quantity',
-                      Number(e.target.value),
+                      parseNumber(e.target.value),
                     )
                   }
+                  placeholder="0"
                 />
               </td>
               <td className="border border-gray-400 p-0">
                 <input
-                  type="number"
+                  type="text"
                   className="w-full p-1 outline-none text-right bg-transparent"
-                  value={item.unitPrice}
+                  value={
+                    item.unitPrice === 0 ? '' : item.unitPrice.toLocaleString()
+                  }
                   onChange={(e) =>
                     handleItemChange(
                       isDetail,
                       idx,
                       'unitPrice',
-                      Number(e.target.value),
+                      parseNumber(e.target.value),
                     )
                   }
+                  placeholder="0"
                 />
               </td>
-              <td className="border border-gray-400 p-1 text-right">
+              <td className="border border-gray-400 p-1 text-right font-medium">
                 {(item.quantity * item.unitPrice).toLocaleString()}
               </td>
               <td className="border border-gray-400 p-0">
@@ -349,20 +544,50 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               </td>
             </tr>
           ))}
+          {!isDetail &&
+            items.length < 5 &&
+            Array.from({ length: 5 - items.length }).map((_, i) => (
+              <tr key={`empty-${i}`}>
+                <td className="border border-gray-400 p-1">&nbsp;</td>
+                <td className="border border-gray-400 p-1" colSpan={7}></td>
+                <td className="border border-gray-400 p-1 no-print"></td>
+              </tr>
+            ))}
         </tbody>
         {!isDetail && (
           <tfoot className="print:table-footer-group">
-            <tr className="print:bg-transparent font-bold">
+            <tr className="bg-gray-50 print:bg-transparent font-bold">
               <td
                 colSpan={6}
-                className="border border-gray-400 p-1 text-center"
+                className="border border-black p-1 text-center tracking-widest"
               >
-                소 계 (VAT 별도)
+                합 계
               </td>
-              <td className="border border-gray-400 p-1 text-right">
+              <td className="border border-black p-1 text-right">
                 {total.toLocaleString()}
               </td>
-              <td className="border border-gray-400" colSpan={2}></td>
+              <td className="border border-black p-1 text-center text-xs">
+                (VAT 별도)
+              </td>
+              <td className="border border-black no-print"></td>
+            </tr>
+            <tr className="bg-yellow-50 print:bg-transparent font-extrabold text-lg">
+              <td
+                colSpan={6}
+                className="border border-black p-2 text-center tracking-widest text-[16px]"
+              >
+                최종 합계
+              </td>
+              <td className="border border-black p-2">
+                <div className="flex items-center justify-end text-[16px] whitespace-nowrap">
+                  <span className="mr-1">₩</span>
+                  <span>{total.toLocaleString()}</span>
+                </div>
+              </td>
+              <td className="border border-black p-2 text-center text-sm">
+                부가세 별도
+              </td>
+              <td className="border border-black no-print"></td>
             </tr>
           </tfoot>
         )}
@@ -378,53 +603,55 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     </div>
   );
 
-  // ★ 수정: 드래그 앤 드롭 기능 추가
   const ImageSection = ({
-    title,
-    imageUrl,
+    tabData,
     isActive,
     isPrintChecked,
     onDelete,
     onUpload,
   }: ImageSectionProps) => {
-    // 드래그 상태 관리
     const [isDragging, setIsDragging] = useState(false);
-
     const handleDragOver = (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(true);
     };
-
     const handleDragLeave = (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
     };
-
     const handleDrop = (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files?.[0];
-      if (file) {
-        onUpload(file);
-      }
+      if (file) onUpload(file);
     };
 
     return (
       <div
-        className={`break-before-page ${
-          isActive ? 'block' : 'hidden'
-        } ${isPrintChecked ? 'print:block print-visible' : 'print:hidden print-hidden'}`}
+        className={`break-before-page ${isActive ? 'block' : 'hidden'} ${isPrintChecked ? 'print:block print-visible' : 'print:hidden print-hidden'}`}
       >
-        <div className={`p-8 h-full min-h-[900px] flex flex-col items-center ${styles.paperBorder}`}>
-          <h2 className="text-3xl font-extrabold mb-8 border-b-2 border-black pb-2 w-full text-center">
-            {title}
-          </h2>
-          {imageUrl ? (
-            <div className="relative w-full flex-1 flex items-center justify-center">
+        <div
+          className={`p-8 h-full min-h-[900px] flex flex-col items-center ${styles.paperBorder} relative`}
+        >
+          {/* ▼ 우측 상단 로고 (모든 이미지 탭) ▼ */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="logo"
+            className="absolute top-10 right-10 w-32 z-0 opacity-80"
+          />
+
+          <input
+            value={tabData.label}
+            onChange={(e) => updateTabLabel(tabData.id, e.target.value)}
+            className="text-3xl font-extrabold mb-8 border-b-2 border-black pb-2 w-full text-center bg-transparent outline-none cursor-text relative z-10"
+          />
+          {tabData.url ? (
+            <div className="relative w-full flex-1 flex items-center justify-center z-10">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={imageUrl}
-                alt={title}
+                src={tabData.url}
+                alt={tabData.label}
                 className="max-w-full max-h-[800px] object-contain"
               />
               <button
@@ -435,11 +662,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               </button>
             </div>
           ) : (
-            // 드래그 앤 드롭 영역
             <div
-              className={`w-full flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-lg transition-colors
-                ${isDragging ? 'border-blue-500 text-blue-500' : 'border-gray-300 text-gray-500'}
-              `}
+              className={`w-full flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-lg transition-colors z-10 ${isDragging ? 'border-blue-500 text-blue-500' : 'border-gray-300 text-gray-500'}`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -463,19 +687,11 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     );
   };
 
-  const fieldName2TabId = (title: string): TabType => {
-    if (title.includes('배치도')) return 'layout';
-    if (title.includes('구성품')) return 'component';
-    if (title.includes('유지관리')) return 'maintenance';
-    if (title.includes('추진일정')) return 'schedule';
-    return 'layout';
-  };
-
   return (
     <div className="max-w-6xl mx-auto p-6 min-h-screen print:p-0 print:max-w-none">
       {/* 상단 컨트롤 */}
       <div className="mb-6 no-print space-y-4">
-        <div className="flex justify-between items-center p-4 rounded border">
+        <div className="flex justify-between items-center p-4 rounded border bg-white shadow-sm">
           <h1 className="text-2xl font-bold">
             {initialData ? '견적서 수정' : '새 견적서 작성'}
           </h1>
@@ -484,7 +700,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               onClick={() => window.print()}
               className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-black font-medium"
             >
-              🖨️ 인쇄 / PDF 저장
+              🖨️ 인쇄 / PDF
             </button>
             <button
               onClick={() => router.back()}
@@ -500,301 +716,396 @@ export default function EstimateEditor({ initialData }: EditorProps) {
             </button>
           </div>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: 'cover', label: '1. 견적서(표지)' },
-            { id: 'detail', label: '2. 산출내역서' },
-            { id: 'layout', label: '3. 배치도' },
-            { id: 'component', label: '4. 주요구성품' },
-            { id: 'maintenance', label: '5. 유지관리' },
-            { id: 'schedule', label: '6. 추진일정' },
-          ].map((tab) => (
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* 고정 탭 1 */}
+          <div
+            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${activeTabId === 'cover' ? 'border-blue-500 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <input
+              value={coverLabel}
+              onChange={(e) => setCoverLabel(e.target.value)}
+              onClick={() => setActiveTabId('cover')}
+              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${activeTabId === 'cover' ? 'font-bold text-blue-700' : 'text-gray-600'}`}
+            />
+            <input
+              type="checkbox"
+              checked={printOptions.cover}
+              onChange={() =>
+                setPrintOptions((prev) => ({ ...prev, cover: !prev.cover }))
+              }
+              className="w-4 h-4 cursor-pointer"
+            />
+          </div>
+          {/* 고정 탭 2 */}
+          <div
+            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${activeTabId === 'detail' ? 'border-blue-500 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <input
+              value={detailLabel}
+              onChange={(e) => setDetailLabel(e.target.value)}
+              onClick={() => setActiveTabId('detail')}
+              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${activeTabId === 'detail' ? 'font-bold text-blue-700' : 'text-gray-600'}`}
+            />
+            <input
+              type="checkbox"
+              checked={printOptions.detail}
+              onChange={() =>
+                setPrintOptions((prev) => ({ ...prev, detail: !prev.detail }))
+              }
+              className="w-4 h-4 cursor-pointer"
+            />
+          </div>
+          {/* 동적 탭 */}
+          {imageTabs.map((tab) => (
             <div
               key={tab.id}
-              className={`flex items-center border rounded px-3 py-2 cursor-pointer ${activeTab === tab.id ? 'border-blue-500 font-bold text-blue-700' : 'text-gray-600'}`}
+              className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${activeTabId === tab.id ? 'border-blue-500 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <button
-                onClick={() => setActiveTab(tab.id as TabType)}
-                className="mr-2 text-sm"
-              >
-                {tab.label}
-              </button>
+              <input
+                value={tab.label}
+                onChange={(e) => updateTabLabel(tab.id, e.target.value)}
+                onClick={() => setActiveTabId(tab.id)}
+                className={`mr-2 text-sm bg-transparent outline-none w-24 cursor-pointer ${activeTabId === tab.id ? 'font-bold text-blue-700' : 'text-gray-600'}`}
+              />
               <input
                 type="checkbox"
-                checked={printOptions[tab.id as keyof typeof printOptions]}
+                checked={printOptions[tab.id] ?? true}
                 onChange={() =>
                   setPrintOptions((prev) => ({
                     ...prev,
-                    [tab.id]: !prev[tab.id as keyof typeof printOptions],
+                    [tab.id]: !prev[tab.id],
                   }))
                 }
-                className="w-4 h-4"
+                className="w-4 h-4 cursor-pointer mr-2"
               />
+              <button
+                onClick={(e) => removeImageTab(e, tab.id)}
+                className="text-red-400 hover:text-red-600 font-bold px-1 text-xs"
+              >
+                ✕
+              </button>
             </div>
           ))}
+          <button
+            onClick={addImageTab}
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 font-bold shadow-sm"
+            title="새 탭 추가"
+          >
+            ＋
+          </button>
         </div>
       </div>
 
       {/* 1. 견적서 표지 (Main) */}
-      <div className={`${getDisplayClass('cover', printOptions.cover)}`}>
-        <div className={`p-10 min-h-[1050px] relative flex flex-col justify-between ${styles.paperBorder}`}>
-          <div>
-            <div className="text-center mb-10 mt-4">
-              <h1 className="text-4xl font-extrabold tracking-[1rem] underline decoration-4 underline-offset-8">
-                견 적 서
-              </h1>
+      <div className={`${getDisplayClass('cover')}`}>
+        <div
+          className={`p-10 min-h-[1050px] relative flex flex-col justify-between ${styles.paperBorder}`}
+        >
+          {/* ▼ 우측 상단 로고 추가 (견적서) ▼ */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="logo"
+            className="absolute top-10 right-10 w-32 z-0 opacity-80"
+          />
+
+          <div className="relative z-10">
+            <div className="text-center mb-6 mt-4 relative">
+              <input
+                value={coverLabel}
+                onChange={(e) => setCoverLabel(e.target.value)}
+                className="text-4xl font-extrabold tracking-[1rem] underline decoration-4 underline-offset-8 text-center w-full bg-transparent outline-none cursor-text"
+              />
+              <div className="absolute top-2 left-0 text-sm font-bold">
+                No. {getDocumentNumber()}
+              </div>
             </div>
 
-            <div className="flex gap-6 mb-8 items-stretch">
-              <div className="flex-1">
-                <table className="w-full border-collapse border-2 border-black h-full text-base">
-                  <tbody>
-                    <tr>
-                      <td className="border border-black text-center font-bold w-24 p-2 text-sm">
-                        수 신
-                      </td>
-                      <td className="border border-black p-2">
-                        <div className="flex items-center">
+            {/* ▼▼▼ 상단 정보 (큰 테두리) ▼▼▼ */}
+            <div className="mb-4 border-2 border-black bg-white/50 backdrop-blur-sm">
+              {/* 좌우 분할 영역 (아래쪽 테두리로 구분) */}
+              <div className="flex gap-0 items-stretch border-b border-black">
+                {/* 좌측: 수신처 정보 */}
+                <div className="flex-1 border-r border-black">
+                  <table className="w-full h-full text-[12px]">
+                    <colgroup>
+                      <col className="w-24 bg-gray-50" />
+                      <col />
+                    </colgroup>
+                    <tbody>
+                      <tr className="border-b border-black">
+                        <td className="p-2 text-center font-bold border-r border-gray-300">
+                          견 적 명
+                        </td>
+                        <td className="p-2">
                           <input
-                            type="text"
+                            name="title"
+                            value={header.title}
+                            onChange={handleHeaderChange}
+                            className="w-full font-bold outline-none bg-transparent"
+                            placeholder="공사명 입력"
+                          />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-2 text-center font-bold border-r border-gray-300">
+                          수 신
+                        </td>
+                        <td className="p-2 flex items-center">
+                          <input
                             name="customerName"
                             value={header.customerName}
                             onChange={handleHeaderChange}
-                            className="w-full font-bold outline-none"
-                            placeholder="업체명"
+                            className="w-full font-bold outline-none bg-transparent"
+                            placeholder="수신처 입력"
                           />
-                          <span className="font-bold whitespace-nowrap ml-1">
-                            귀하
+                          <span className="shrink-0 font-bold ml-1">귀하</span>
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-2 text-center font-bold border-r border-gray-300">
+                          참 조
+                        </td>
+                        <td className="p-2">
+                          <input
+                            name="customerRef"
+                            value={header.customerRef}
+                            onChange={handleHeaderChange}
+                            className="w-full outline-none bg-transparent"
+                            placeholder="참조인 입력"
+                          />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-2 text-center font-bold border-r border-gray-300">
+                          견적일자
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="date"
+                            name="quotationDate"
+                            value={header.quotationDate}
+                            onChange={handleHeaderChange}
+                            className="w-full outline-none bg-transparent"
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 text-center font-bold border-r border-gray-300 text-blue-700">
+                          납기예정
+                        </td>
+                        <td className="p-2">
+                          <input
+                            name="deliveryDate"
+                            value={header.deliveryDate}
+                            onChange={handleHeaderChange}
+                            className="w-full outline-none bg-transparent"
+                            placeholder="예: 발주 후 6개월"
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 우측: 공급자 정보 */}
+                <div className="flex-1">
+                  <table className="w-full h-full text-[12px]">
+                    <colgroup>
+                      <col className="w-8 bg-gray-50" />
+                      <col className="w-20 bg-gray-50" />
+                      <col />
+                      <col className="w-16 bg-gray-50" />
+                      <col className="w-20" />
+                    </colgroup>
+                    <tbody>
+                      <tr className="border-b border-black">
+                        <td
+                          rowSpan={6}
+                          className="p-1 text-center font-bold border-r border-black"
+                          style={{ writingMode: 'vertical-rl' }}
+                        >
+                          공 급 자
+                        </td>
+                        <td className="p-1 text-center font-bold border-r border-gray-300">
+                          사업자번호
+                        </td>
+                        <td
+                          colSpan={3}
+                          className="p-1 text-center font-bold text-lg tracking-widest"
+                        >
+                          143-87-01160
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-1 text-center font-bold border-r border-gray-300">
+                          회 사 명
+                        </td>
+                        <td className="p-1 text-center">(주)퍼스트씨앤디</td>
+                        <td className="p-1 text-center font-bold border-l border-r border-gray-300">
+                          대 표
+                        </td>
+                        <td className="p-1 text-center relative overflow-visible">
+                          <span className="relative z-10">
+                            김 종 우{' '}
+                            <span className="text-gray-400 text-xs ml-1">
+                              (인)
+                            </span>
                           </span>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black text-center font-bold p-2 text-sm">
-                        참 조
-                      </td>
-                      <td className="border border-black p-2">
-                        <input
-                          type="text"
-                          name="customerRef"
-                          value={header.customerRef}
-                          onChange={handleHeaderChange}
-                          className="w-full outline-none"
-                        />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black text-center font-bold p-2 text-sm">
-                        날 짜
-                      </td>
-                      <td className="border border-black p-2">
-                        <input
-                          type="date"
-                          name="quotationDate"
-                          value={header.quotationDate}
-                          onChange={handleHeaderChange}
-                          className="w-full outline-none font-medium"
-                        />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black text-center font-bold p-2 text-sm">
-                        건 명
-                      </td>
-                      <td className="border border-black p-2">
-                        <input
-                          type="text"
-                          name="title"
-                          value={header.title}
-                          onChange={handleHeaderChange}
-                          className="w-full outline-none font-bold"
-                          placeholder="공사명"
-                        />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black text-center font-bold p-2 text-sm">
-                        합 계
-                      </td>
-                      <td className="border border-black p-2">
-                        <div className="flex justify-between items-center">
-                          <span className="font-bold">
-                            ₩ {(total + vat).toLocaleString()}
-                          </span>
-                          <span className="text-sm font-bold">(VAT포함)</span>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src="/sign.png"
+                            alt="직인"
+                            className="absolute w-14 top-1/2 right-2 transform -translate-y-1/2 opacity-90 mix-blend-multiply z-0 pointer-events-none print:block"
+                            style={{ right: '10px', top: '50%' }}
+                          />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-1 text-center font-bold border-r border-gray-300">
+                          주 소
+                        </td>
+                        <td colSpan={3} className="p-1 text-center text-xs">
+                          경기도 화성시 동탄첨단산업1로 27
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-1 text-center font-bold border-r border-gray-300">
+                          업 태
+                        </td>
+                        <td colSpan={3} className="p-1 text-center text-xs">
+                          제조업, 도매 및 소매업 정보통신업
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-1 text-center font-bold border-r border-gray-300">
+                          종 목
+                        </td>
+                        <td colSpan={3} className="p-1 text-center text-xs">
+                          <p>에너지 저장장치 제조업, 전자상거래 및 통신판매,</p>
+                          <p>
+                            {' '}
+                            응용 소프트웨어 개발 및 공급업, 컴퓨터 프로그래밍
+                            서비스업
+                          </p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="p-1 text-center font-bold border-r border-gray-300">
+                          연 락 처
+                        </td>
+                        <td
+                          colSpan={3}
+                          className="p-1 text-center text-xs leading-relaxed"
+                        >
+                          <strong>김 종 우 대표이사</strong>
+                          <br />
+                          010-5617-9500 / jongwoo@firstcorea.com
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="flex-1">
-                <table className="w-full border-collapse border-2 border-black h-full text-sm">
-                  <tbody>
-                    <tr>
-                      <td
-                        className="border border-black p-1 w-10 text-center font-bold writing-vertical"
-                        rowSpan={5}
-                      >
-                        공<br />급<br />자
-                      </td>
-                      <td className="border border-black p-1 w-20 text-center font-bold text-[13px]">
-                        등록번호
-                      </td>
-                      <td
-                        className="border border-black p-1 font-bold text-center"
-                        colSpan={3}
-                      >
-                        143-87-01160
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black p-1 text-center font-bold text-[13px]">
-                        상 호
-                      </td>
-                      <td className="border border-black p-1 text-center text-[10px]">
-                        (주)퍼스트씨앤디
-                      </td>
-                      <td className="border border-black p-1 w-14 text-center font-bold text-[13px]">
-                        성 명
-                      </td>
-                      <td className="border border-black p-1 text-center relative text-[10px]">
-                        김 종 우{' '}
-                        <span className="text-[10px] text-gray-400 print:text-black">
-                          (인)
-                        </span>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black p-1 text-center font-bold text-[13px]">
-                        주 소
-                      </td>
-                      <td
-                        className="border border-black p-1 text-center text-xs tracking-tighter"
-                        colSpan={3}
-                      >
-                        경기도 화성시 동탄첨단산업1로 27
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black p-1 text-center font-bold text-[13px]">
-                        업 태
-                      </td>
-                      <td className="border border-black p-1 text-center text-[10px]">
-                        서비스업/제조업
-                      </td>
-                      <td className="border border-black p-1 text-center font-bold text-[13px]">
-                        종 목
-                      </td>
-                      <td className="border border-black p-1 text-center text-[10px]">
-                        응용소프트웨어
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black p-1 text-center font-bold text-[13px]">
-                        전 화
-                      </td>
-                      <td
-                        className="border border-black p-1 text-center font-bold"
-                        colSpan={3}
-                      >
-                        010-5617-9500
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+
+              {/* ▼▼▼ 하단: 최종견적금액 (통합 1행) ▼▼▼ */}
+              <div className="flex h-16 border-t border-black">
+                {/* 라벨 부분: flex-col로 줄바꿈 확실하게 */}
+                <div className="w-32 bg-gray-100 border-r border-black p-2 text-center font-extrabold flex flex-col justify-center items-center text-sm">
+                  <span>최종견적금액</span>
+                  <span className="text-[10px] font-normal mt-0.5">
+                    (부가세별도)
+                  </span>
+                </div>
+                {/* 값 부분: flex-row로 가로 배치, 한글 먼저 */}
+                <div className="flex-1 flex items-center justify-around px-4">
+                  <span className="text-base font-bold mr-2">
+                    일금 {numberToKorean(total)} 원整
+                  </span>
+                  <span className="text-lg font-bold ">
+                    ( ₩ {total.toLocaleString()} )
+                  </span>
+                </div>
               </div>
             </div>
 
             {renderTable(mainItems, false)}
           </div>
 
-          <div className="mt-8">
-            <div className="border-2 border-black p-4">
-              <h3 className="font-bold text-base mb-3 border-b border-gray-300 pb-1">
-                ※ 견적 조건 및 특이사항
+          {/* ▼▼▼ [수정] mt-4 -> mt-1 (위로 올림), 내부 패딩 및 글자 크기 축소 ▼▼▼ */}
+          <div className="mt-1 relative z-10">
+            <div className="border-2 border-black p-2 bg-gray-50/90 backdrop-blur-sm">
+              {/* 제목 크기 text-lg -> text-base 로 축소, 마진 축소 */}
+              <h3 className="font-bold text-base mb-1 border-b-2 border-gray-300 pb-1 text-center">
+                &lt; 견 적 조 건 &gt;
               </h3>
-              <div className="flex gap-4 mb-2 items-center text-sm">
-                <span className="font-bold w-20 shrink-0">1. 유효기간:</span>
+
+              {/* 본문 텍스트 크기 text-sm -> text-xs (더 작게) */}
+              <div className="flex gap-2 text-xs">
+                <span className="font-bold w-14 shrink-0 mt-0.5">
+                  유효기간:
+                </span>
                 <input
-                  type="text"
                   name="expiryDate"
                   value={header.expiryDate}
                   onChange={handleHeaderChange}
-                  className="flex-1 outline-none bg-transparent border-b border-gray-200"
+                  className="w-40 outline-none bg-transparent border-b border-gray-300 h-5"
                 />
               </div>
-              <div className="flex gap-4 text-sm">
-                <span className="font-bold w-20 shrink-0 mt-1">
-                  2. 특이사항:
-                </span>
-                <textarea
-                  name="conditions"
-                  value={header.conditions}
-                  onChange={handleHeaderChange}
-                  rows={4}
-                  className="flex-1 outline-none bg-transparent resize-none"
-                />
-              </div>
+
+              <textarea
+                name="conditions"
+                value={header.conditions}
+                onChange={handleHeaderChange}
+                rows={7}
+                // text-xs 적용, leading-relaxed -> leading-normal (줄간격 좁힘)
+                className="w-full mt-1 outline-none bg-transparent resize-none whitespace-pre-wrap text-xs leading-normal"
+              />
             </div>
           </div>
         </div>
       </div>
 
       {/* 2. 산출내역서 (Detail) */}
-      <div
-        className={`break-before-page ${getDisplayClass('detail', printOptions.detail)}`}
-      >
-        <div className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder}`}>
-          <div className="text-center mb-8 mt-4">
-            <h2 className="text-3xl font-extrabold tracking-widest border-b-2 border-black inline-block pb-2">
-              세부 산출내역서
-            </h2>
+      <div className={`${getDisplayClass('detail')}`}>
+        <div
+          className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder} relative`}
+        >
+          {/* ▼ 우측 상단 로고 추가 (산출내역서) ▼ */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="logo"
+            className="absolute top-10 right-10 w-32 z-0 opacity-80"
+          />
+
+          <div className="text-center mb-8 mt-4 relative z-10">
+            <input
+              value={detailLabel}
+              onChange={(e) => setDetailLabel(e.target.value)}
+              className="text-3xl font-extrabold tracking-widest border-b-2 border-black pb-2 text-center w-full bg-transparent outline-none cursor-text"
+            />
           </div>
-          <div className="text-right text-sm mb-1 font-bold">
+          <div className="text-right text-sm mb-1 font-bold relative z-10">
             [단위: 원 / VAT 별도]
           </div>
-          {renderTable(detailItems, true)}
+          <div className="relative z-10">{renderTable(detailItems, true)}</div>
         </div>
       </div>
 
-      {/* 3. 이미지 섹션들 */}
-      {[
-        {
-          key: 'layout',
-          title: '태양광 배치도',
-          field: 'imageLayout',
-          img: header.imageLayout,
-        },
-        {
-          key: 'component',
-          title: '주요 구성품',
-          field: 'imageComponent',
-          img: header.imageComponent,
-        },
-        {
-          key: 'maintenance',
-          title: '안전 유지관리 계획',
-          field: 'imageMaintenance',
-          img: header.imageMaintenance,
-        },
-        {
-          key: 'schedule',
-          title: '사업 추진 일정',
-          field: 'imageSchedule',
-          img: header.imageSchedule,
-        },
-      ].map((sec) => (
+      {/* 3. 동적 이미지 섹션들 (이미지 섹션 컴포넌트 내부에 로고가 포함되어 있음) */}
+      {imageTabs.map((tab) => (
         <ImageSection
-          key={sec.key}
-          title={sec.title}
-          imageUrl={sec.img}
-          fieldName={sec.field}
-          isActive={activeTab === sec.key}
-          isPrintChecked={printOptions[sec.key as keyof typeof printOptions]}
-          onDelete={() => setHeader((prev) => ({ ...prev, [sec.field]: '' }))}
-          onUpload={(file) => handleFileUpload(file, sec.field)}
+          key={tab.id}
+          tabData={tab}
+          isActive={activeTabId === tab.id}
+          isPrintChecked={printOptions[tab.id] ?? true}
+          onDelete={() =>
+            setImageTabs(
+              imageTabs.map((t) => (t.id === tab.id ? { ...t, url: '' } : t)),
+            )
+          }
+          onUpload={(file) => handleFileUpload(file, tab.id)}
         />
       ))}
     </div>
