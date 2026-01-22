@@ -436,13 +436,13 @@ export default function EstimateEditor({ initialData }: EditorProps) {
             <th className="border border-black p-1 w-24">
               {isDetail ? '품명' : '구 분'}
             </th>
-            <th className="border border-black p-1">규 격</th>{' '}
+            <th className="border border-black p-1">규 격</th>
             {/* Width 지정 안 함 -> 남은 공간 최대 차지 */}
             <th className="border border-black p-1 w-10">단위</th> {/* 작게 */}
             <th className="border border-black p-1 w-14">수량</th> {/* 작게 */}
             <th className="border border-black p-1 w-24">단가</th>
             <th className="border border-black p-1 w-24">금 액</th>
-            <th className="border border-black p-1 w-24">비고</th>{' '}
+            <th className="border border-black p-1 w-24">비고</th>
             {/* 적당한 고정 너비 */}
             <th className="border border-black p-1 w-8 no-print">삭제</th>
           </tr>
@@ -947,7 +947,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                         </td>
                         <td className="p-1 text-center relative overflow-visible">
                           <span className="relative z-10">
-                            김 종 우{' '}
+                            김 종 우
                             <span className="text-gray-400 text-xs ml-1">
                               (인)
                             </span>
@@ -984,7 +984,6 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                         <td colSpan={3} className="p-1 text-center text-xs">
                           <p>에너지 저장장치 제조업, 전자상거래 및 통신판매,</p>
                           <p>
-                            {' '}
                             응용 소프트웨어 개발 및 공급업, 컴퓨터 프로그래밍
                             서비스업
                           </p>
