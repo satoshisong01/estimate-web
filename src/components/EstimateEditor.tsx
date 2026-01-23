@@ -1010,7 +1010,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               {/* ▼▼▼ 하단: 최종견적금액 (통합 1행) ▼▼▼ */}
               <div className="flex h-16 border-t border-black">
                 {/* 라벨 부분: flex-col로 줄바꿈 확실하게 */}
-                <div className="w-32 bg-gray-100 border-r border-black p-2 text-center font-extrabold flex flex-col justify-center items-center text-sm">
+                <div className="w-24 bg-gray-100 border-r border-black p-2 text-center font-extrabold flex flex-col justify-center items-center text-sm">
                   <span>최종견적금액</span>
                   <span className="text-[10px] font-normal mt-0.5">
                     (부가세별도)
