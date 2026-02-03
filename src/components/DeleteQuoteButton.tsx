@@ -29,7 +29,7 @@ export default function DeleteQuoteButton({ id }: { id: number }) {
   return (
     <button
       onClick={handleDelete}
-      className="text-red-500 hover:text-red-700 text-xs border border-red-200 px-2 py-1 rounded hover:bg-red-50 transition-colors whitespace-nowrap"
+      className="text-red-500 hover:text-red-700 text-sm font-medium border border-red-200 px-3 py-1.5 rounded hover:bg-red-50 transition-colors whitespace-nowrap cursor-pointer"
     >
       삭제
     </button>

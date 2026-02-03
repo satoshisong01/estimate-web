@@ -915,19 +915,19 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           <div className="space-x-2">
             <button
               onClick={() => window.print()}
-              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-black font-medium"
+              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-black font-medium cursor-pointer"
             >
               🖨️ 인쇄 / PDF
             </button>
             <button
               onClick={() => router.back()}
-              className="px-4 py-2 border rounded hover:bg-gray-100"
+              className="px-4 py-2 border rounded hover:bg-gray-100 cursor-pointer"
             >
               취소
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium cursor-pointer"
             >
               저장
             </button>
@@ -1021,7 +1021,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               />
               <button
                 onClick={(e) => removeExtraTab(e, tab.id)}
-                className="text-red-400 hover:text-red-600 font-bold px-1 text-xs"
+                className="text-red-400 hover:text-red-600 font-bold px-1 text-xs cursor-pointer"
               >
                 ✕
               </button>
@@ -1030,7 +1030,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           <div className="relative">
             <button
               onClick={() => setShowAddTabMenu((v) => !v)}
-              className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 font-bold shadow-sm"
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 font-bold shadow-sm cursor-pointer"
               title="새 탭 추가"
             >
               ＋
@@ -1040,14 +1040,14 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                 <button
                   type="button"
                   onClick={addImageTab}
-                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"
                 >
                   이미지 업로드
                 </button>
                 <button
                   type="button"
                   onClick={addDetailSheet}
-                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"
                 >
                   산출내역서(세부내역)
                 </button>

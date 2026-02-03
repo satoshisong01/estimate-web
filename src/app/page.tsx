@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation';
 import { executeQuery } from '@/lib/db';
 import DeleteQuoteButton from '@/components/DeleteQuoteButton';
+import CopyEstimateButton from '@/components/CopyEstimateButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,10 +43,17 @@ export default async function Home() {
           </span>
           <Link
             href="/estimate/new"
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition cursor-pointer"
           >
             + 새 견적서 작성
           </Link>
+          <CopyEstimateButton
+            estimates={estimates.map((est: any) => ({
+              id: est.id,
+              title: est.title,
+              customer_name: est.customer_name,
+            }))}
+          />
         </div>
       </div>
 
@@ -113,7 +121,7 @@ export default async function Home() {
                     <div className="flex items-center justify-center gap-2 flex-nowrap">
                       <Link
                         href={`/estimate/${est.id}`}
-                        className="inline-block text-blue-600 hover:text-blue-800 font-medium text-sm border border-blue-200 px-3 py-1.5 rounded hover:bg-blue-50 whitespace-nowrap"
+                        className="inline-block text-blue-600 hover:text-blue-800 font-medium text-sm border border-blue-200 px-3 py-1.5 rounded hover:bg-blue-50 whitespace-nowrap cursor-pointer"
                       >
                         수정/조회
                       </Link>

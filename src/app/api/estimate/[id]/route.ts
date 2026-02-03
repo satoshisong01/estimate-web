@@ -3,6 +3,64 @@ import { executeQuery } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
+// 0. 조회 (GET) - 복사용 전체 데이터
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { id } = await params;
+    const headerRes: any[] = await executeQuery(
+      'SELECT * FROM est_quotations WHERE id = $1',
+      [id]
+    );
+    if (headerRes.length === 0)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const itemsRes: any[] = await executeQuery(
+      'SELECT * FROM est_quotation_items WHERE quotation_id = $1 ORDER BY sort_order ASC',
+      [id]
+    );
+
+    const q = headerRes[0];
+    const data = {
+      title: q.title,
+      customerName: q.customer_name,
+      customerRef: q.customer_ref,
+      quotationDate: q.quotation_date,
+      totalAmount: Number(q.total_amount),
+      vat: Number(q.vat),
+      grandTotal: Number(q.grand_total),
+      memo: q.memo,
+      imageLayout: q.image_layout || '',
+      imageComponent: q.image_component || '',
+      imageMaintenance: q.image_maintenance || '',
+      imageSchedule: q.image_schedule || '',
+      items: itemsRes.map((item: any) => ({
+        category: item.category,
+        name: item.name,
+        spec: item.spec,
+        unit: item.unit,
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unit_price),
+        remarks: item.remarks || '',
+        section: item.section || 'main',
+      })),
+    };
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('조회 실패:', error);
+    return NextResponse.json(
+      { success: false, error: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
 // 1. 수정하기 (PUT)
 export async function PUT(
   req: Request,
