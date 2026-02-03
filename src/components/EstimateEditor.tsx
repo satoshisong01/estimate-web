@@ -88,6 +88,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
   const [coverLabel, setCoverLabel] = useState('1. 견적서(표지)');
   const [detailLabel, setDetailLabel] = useState('2. 산출내역서');
+  /** 2. 산출내역서 탭 표시 여부 (X로 닫을 수 있음) */
+  const [detailTabVisible, setDetailTabVisible] = useState(true);
 
   const defaultExtraTabs: ExtraTab[] = [
     { id: 'layout', type: 'image', label: '3. 배치도', url: '' },
@@ -137,6 +139,13 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
   const [mainItems, setMainItems] = useState<EstimateItem[]>([]);
   const [detailItems, setDetailItems] = useState<EstimateItem[]>([]);
+  /** 견적서(표지)에서 산출내역서 합산 행의 구분/규격/단위/비고 수정값 (키: 'detail' 또는 extraTab.id) */
+  const [coverSyntheticOverrides, setCoverSyntheticOverrides] = useState<
+    Record<
+      string,
+      { category?: string; spec?: string; unit?: string; remarks?: string }
+    >
+  >({});
 
   useEffect(() => {
     if (initialData?.items) {
@@ -147,22 +156,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         (i: any) => i.section === 'detail'
       );
 
-      setMainItems(
-        mains.length > 0
-          ? mains
-          : [
-              {
-                section: 'main',
-                category: '태양광 설치공사',
-                name: '',
-                spec: '',
-                unit: '식',
-                quantity: 1,
-                unitPrice: 0,
-                remarks: '',
-              },
-            ]
-      );
+      setMainItems(mains.length > 0 ? mains : []);
       setDetailItems(
         details.length > 0
           ? details
@@ -180,18 +174,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
             ]
       );
     } else {
-      setMainItems([
-        {
-          section: 'main',
-          category: '태양광 설치공사',
-          name: '',
-          spec: '',
-          unit: '식',
-          quantity: 1,
-          unitPrice: 0,
-          remarks: '',
-        },
-      ]);
+      setMainItems([]);
       setDetailItems([
         {
           section: 'detail',
@@ -221,6 +204,14 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               '2. 산출내역서'
           );
 
+          if (memoObj.tabConfig.coverSyntheticOverrides) {
+            setCoverSyntheticOverrides(
+              memoObj.tabConfig.coverSyntheticOverrides
+            );
+          }
+          if (memoObj.tabConfig.detailTabVisible === false) {
+            setDetailTabVisible(false);
+          }
           if (memoObj.tabConfig.extraTabs) {
             setExtraTabs(memoObj.tabConfig.extraTabs);
             const newPrintOpts: Record<string, boolean> = {
@@ -314,16 +305,24 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         0
       )
     );
-  const coverSyntheticRows: EstimateItem[] = [
-    {
-      category: getCategoryFromLabel(detailLabel),
-      name: '',
-      spec: '',
-      unit: '식',
-      quantity: 1,
-      unitPrice: detailTotal,
-      remarks: '',
-    },
+  const syntheticRowKeys = [
+    ...(detailTabVisible ? ['detail' as const] : []),
+    ...extraTabs.filter((t) => t.type === 'detail' && t.items).map((t) => t.id),
+  ];
+  const coverSyntheticRowsBase: EstimateItem[] = [
+    ...(detailTabVisible
+      ? [
+          {
+            category: getCategoryFromLabel(detailLabel),
+            name: '',
+            spec: '',
+            unit: '식',
+            quantity: 1,
+            unitPrice: detailTotal,
+            remarks: '',
+          } as EstimateItem,
+        ]
+      : []),
     ...extraTabs
       .filter((t) => t.type === 'detail' && t.items)
       .map(
@@ -343,6 +342,20 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           } as EstimateItem)
       ),
   ];
+  const coverSyntheticRows: EstimateItem[] = coverSyntheticRowsBase.map(
+    (row, i) => {
+      const key = syntheticRowKeys[i];
+      const over = coverSyntheticOverrides[key];
+      if (!over) return row;
+      return {
+        ...row,
+        category: over.category ?? row.category,
+        spec: over.spec ?? row.spec,
+        unit: over.unit ?? row.unit,
+        remarks: over.remarks ?? row.remarks,
+      };
+    }
+  );
   /** 산출내역서 합산 행을 맨 위에, 그 다음 수동 입력 행 */
   const coverDisplayRows = [...coverSyntheticRows, ...mainItems];
 
@@ -388,8 +401,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
   const removeItem = (isDetail: boolean, index: number) => {
     const targetItems = isDetail ? detailItems : mainItems;
     const setTarget = isDetail ? setDetailItems : setMainItems;
-    if (targetItems.length > 1)
-      setTarget(targetItems.filter((_, i) => i !== index));
+    if (isDetail && targetItems.length <= 1) return;
+    setTarget(targetItems.filter((_, i) => i !== index));
   };
 
   const addImageTab = () => {
@@ -547,7 +560,9 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     const tabConfig = {
       coverLabel,
       detailLabel,
+      detailTabVisible,
       extraTabs,
+      coverSyntheticOverrides,
       imageTabs: imageTabList.map((t) => ({
         id: t.id,
         label: t.label,
@@ -606,6 +621,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       syntheticStartIndex?: number;
       /** 합산 행이 앞에 올 때: 이 인덱스 미만이 합산(읽기전용) */
       syntheticEndIndex?: number;
+      /** 합산 행에서도 읽기전용으로 둘 필드 (예: ['quantity','unitPrice']) */
+      syntheticReadOnlyFields?: (keyof EstimateItem)[];
       onAddItem?: () => void;
       onRemoveItem?: (index: number) => void;
       onItemChange?: (
@@ -617,6 +634,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
   ) => {
     const syntheticStart = options?.syntheticStartIndex ?? -1;
     const syntheticEnd = options?.syntheticEndIndex ?? -1;
+    const syntheticReadOnlyFields = options?.syntheticReadOnlyFields ?? [];
     const addCb = options?.onAddItem ?? (() => addItem(isDetail));
     const removeCb =
       options?.onRemoveItem ?? ((idx: number) => removeItem(isDetail, idx));
@@ -647,6 +665,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               const isSynthetic =
                 (syntheticEnd >= 0 && idx < syntheticEnd) ||
                 (syntheticStart >= 0 && idx >= syntheticStart);
+              const isReadOnly = (field: keyof EstimateItem) =>
+                isSynthetic && syntheticReadOnlyFields.includes(field);
               return (
                 <tr key={idx}>
                   <td className="border border-gray-400 p-1 text-center">
@@ -659,14 +679,13 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                       }`}
                       value={isDetail ? item.name : item.category}
                       onChange={(e) =>
-                        !isSynthetic &&
                         changeCb(
                           idx,
                           isDetail ? 'name' : 'category',
                           e.target.value
                         )
                       }
-                      readOnly={isSynthetic}
+                      readOnly={isReadOnly('category')}
                       placeholder=""
                     />
                   </td>
@@ -674,20 +693,16 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                     <input
                       className="w-full p-1 outline-none bg-transparent"
                       value={item.spec}
-                      onChange={(e) =>
-                        !isSynthetic && changeCb(idx, 'spec', e.target.value)
-                      }
-                      readOnly={isSynthetic}
+                      onChange={(e) => changeCb(idx, 'spec', e.target.value)}
+                      readOnly={isReadOnly('spec')}
                     />
                   </td>
                   <td className="border border-gray-400 p-0">
                     <input
                       className="w-full p-1 outline-none text-center bg-transparent"
                       value={item.unit}
-                      onChange={(e) =>
-                        !isSynthetic && changeCb(idx, 'unit', e.target.value)
-                      }
-                      readOnly={isSynthetic}
+                      onChange={(e) => changeCb(idx, 'unit', e.target.value)}
+                      readOnly={isReadOnly('unit')}
                     />
                   </td>
                   <td className="border border-gray-400 p-0">
@@ -700,10 +715,9 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                           : item.quantity.toLocaleString()
                       }
                       onChange={(e) =>
-                        !isSynthetic &&
                         changeCb(idx, 'quantity', parseNumber(e.target.value))
                       }
-                      readOnly={isSynthetic}
+                      readOnly={isReadOnly('quantity')}
                       placeholder="0"
                     />
                   </td>
@@ -717,10 +731,9 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                           : item.unitPrice.toLocaleString()
                       }
                       onChange={(e) =>
-                        !isSynthetic &&
                         changeCb(idx, 'unitPrice', parseNumber(e.target.value))
                       }
-                      readOnly={isSynthetic}
+                      readOnly={isReadOnly('unitPrice')}
                       placeholder="0"
                     />
                   </td>
@@ -731,10 +744,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                     <input
                       className="w-full p-1 outline-none bg-transparent"
                       value={item.remarks}
-                      onChange={(e) =>
-                        !isSynthetic && changeCb(idx, 'remarks', e.target.value)
-                      }
-                      readOnly={isSynthetic}
+                      onChange={(e) => changeCb(idx, 'remarks', e.target.value)}
+                      readOnly={isReadOnly('remarks')}
                     />
                   </td>
                   <td className="border border-gray-400 p-1 text-center no-print">
@@ -752,15 +763,6 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                 </tr>
               );
             })}
-            {!isDetail &&
-              items.length < 3 &&
-              Array.from({ length: 3 - items.length }).map((_, i) => (
-                <tr key={`empty-${i}`}>
-                  <td className="border border-gray-400 p-1">&nbsp;</td>
-                  <td className="border border-gray-400 p-1" colSpan={7}></td>
-                  <td className="border border-gray-400 p-1 no-print"></td>
-                </tr>
-              ))}
           </tbody>
           {!isDetail && (
             <tfoot className="print:table-footer-group">
@@ -961,33 +963,50 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               className="w-4 h-4 cursor-pointer"
             />
           </div>
-          {/* 고정 탭 2 */}
-          <div
-            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${
-              activeTabId === 'detail'
-                ? 'border-blue-500 bg-blue-50'
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            <input
-              value={detailLabel}
-              onChange={(e) => setDetailLabel(e.target.value)}
-              onClick={() => setActiveTabId('detail')}
-              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${
+          {/* 고정 탭 2 (X로 닫기 가능) */}
+          {detailTabVisible && (
+            <div
+              className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${
                 activeTabId === 'detail'
-                  ? 'font-bold text-blue-700'
-                  : 'text-gray-600'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'text-gray-600 hover:bg-gray-50'
               }`}
-            />
-            <input
-              type="checkbox"
-              checked={printOptions.detail}
-              onChange={() =>
-                setPrintOptions((prev) => ({ ...prev, detail: !prev.detail }))
-              }
-              className="w-4 h-4 cursor-pointer"
-            />
-          </div>
+            >
+              <input
+                value={detailLabel}
+                onChange={(e) => setDetailLabel(e.target.value)}
+                onClick={() => setActiveTabId('detail')}
+                className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${
+                  activeTabId === 'detail'
+                    ? 'font-bold text-blue-700'
+                    : 'text-gray-600'
+                }`}
+              />
+              <input
+                type="checkbox"
+                checked={printOptions.detail}
+                onChange={() =>
+                  setPrintOptions((prev) => ({
+                    ...prev,
+                    detail: !prev.detail,
+                  }))
+                }
+                className="w-4 h-4 cursor-pointer mr-2"
+              />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm('2. 산출내역서 탭을 닫으시겠습니까?')) {
+                    setDetailTabVisible(false);
+                    if (activeTabId === 'detail') setActiveTabId('cover');
+                  }
+                }}
+                className="text-red-400 hover:text-red-600 font-bold px-1 text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           {/* 동적 탭 (이미지 / 산출내역서) */}
           {extraTabs.map((tab) => (
             <div
@@ -1067,7 +1086,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           <img
             src="/logo.png"
             alt="logo"
-            className="absolute top-15 right-10 w-32 z-0 opacity-80"
+            className="absolute top-12 right-10 w-32 z-0 opacity-80"
           />
 
           <div className="relative z-10">
@@ -1291,19 +1310,35 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
             {renderTable(coverDisplayRows, false, {
               syntheticEndIndex: coverSyntheticRows.length,
+              syntheticReadOnlyFields: ['quantity', 'unitPrice'],
               onAddItem: () => addItem(false),
               onRemoveItem: (idx) => {
                 if (idx >= coverSyntheticRows.length)
                   removeItem(false, idx - coverSyntheticRows.length);
               },
               onItemChange: (idx, field, value) => {
-                if (idx >= coverSyntheticRows.length)
+                if (idx < coverSyntheticRows.length) {
+                  const key = syntheticRowKeys[idx];
+                  if (
+                    key &&
+                    ['category', 'spec', 'unit', 'remarks'].includes(field)
+                  ) {
+                    setCoverSyntheticOverrides((prev) => ({
+                      ...prev,
+                      [key]: {
+                        ...(prev[key] || {}),
+                        [field]: value as string,
+                      },
+                    }));
+                  }
+                } else {
                   handleItemChange(
                     false,
                     idx - coverSyntheticRows.length,
                     field,
                     value
                   );
+                }
               },
             })}
           </div>
@@ -1342,32 +1377,36 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         </div>
       </div>
 
-      {/* 2. 산출내역서 (Detail) */}
-      <div className={`${getDisplayClass('detail')}`}>
-        <div
-          className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder} relative`}
-        >
-          {/* ▼ 우측 상단 로고 추가 (산출내역서) ▼ */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.png"
-            alt="logo"
-            className="absolute top-15 right-10 w-32 z-0 opacity-80"
-          />
-
-          <div className="text-center mb-8 mt-4 relative z-10">
-            <input
-              value={detailLabel}
-              onChange={(e) => setDetailLabel(e.target.value)}
-              className="text-3xl font-extrabold tracking-widest border-b-2 border-black pb-2 text-center w-full bg-transparent outline-none cursor-text"
+      {/* 2. 산출내역서 (Detail) - detailTabVisible일 때만 표시 */}
+      {detailTabVisible && (
+        <div className={`${getDisplayClass('detail')}`}>
+          <div
+            className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder} relative`}
+          >
+            {/* ▼ 우측 상단 로고 추가 (산출내역서) ▼ */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.png"
+              alt="logo"
+              className="absolute top-12 right-10 w-32 z-0 opacity-80"
             />
+
+            <div className="text-center mb-8 mt-4 relative z-10">
+              <input
+                value={detailLabel}
+                onChange={(e) => setDetailLabel(e.target.value)}
+                className="text-3xl font-extrabold tracking-widest border-b-2 border-black pb-2 text-center w-full bg-transparent outline-none cursor-text"
+              />
+            </div>
+            <div className="text-right text-sm mb-1 font-bold relative z-10">
+              [단위: 원 / VAT 별도]
+            </div>
+            <div className="relative z-10">
+              {renderTable(detailItems, true)}
+            </div>
           </div>
-          <div className="text-right text-sm mb-1 font-bold relative z-10">
-            [단위: 원 / VAT 별도]
-          </div>
-          <div className="relative z-10">{renderTable(detailItems, true)}</div>
         </div>
-      </div>
+      )}
 
       {/* 3. 동적 탭: 이미지 업로드 / 산출내역서 */}
       {extraTabs.map((tab) =>

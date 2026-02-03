@@ -13,7 +13,7 @@ export default async function EditEstimatePage({
   // 1. 견적서 헤더 조회
   const headerRes: any = await executeQuery(
     'SELECT * FROM est_quotations WHERE id = $1',
-    [id], // params.id 대신 id 사용
+    [id] // params.id 대신 id 사용
   );
 
   if (headerRes.length === 0) {
@@ -23,10 +23,10 @@ export default async function EditEstimatePage({
   // 2. 견적서 품목 조회
   const itemsRes: any = await executeQuery(
     'SELECT * FROM est_quotation_items WHERE quotation_id = $1 ORDER BY sort_order ASC',
-    [id], // params.id 대신 id 사용
+    [id] // params.id 대신 id 사용
   );
 
-  // 3. 데이터 합치기
+  // 3. 데이터 합치기 (section 포함해야 산출내역서 복원됨)
   const fullData = {
     ...headerRes[0],
     items: itemsRes.map((item: any) => ({
@@ -37,6 +37,7 @@ export default async function EditEstimatePage({
       quantity: Number(item.quantity),
       unitPrice: Number(item.unit_price),
       remarks: item.remarks,
+      section: item.section || 'main',
     })),
   };
 
