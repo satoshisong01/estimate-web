@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation';
 import { executeQuery } from '@/lib/db';
+import DeleteQuoteButton from '@/components/DeleteQuoteButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +59,7 @@ export default async function Home() {
               <th className="px-6 py-3 w-32">견적일</th>
               <th className="px-6 py-3 text-right">총 합계(원)</th>
               <th className="px-6 py-3 text-center">최종 수정자</th>
-              <th className="px-6 py-3 text-center w-24">관리</th>
+              <th className="px-6 py-3 text-center w-32">관리</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -109,12 +110,15 @@ export default async function Home() {
                   </td>
 
                   <td className="px-6 py-4 text-center">
-                    <Link
-                      href={`/estimate/${est.id}`}
-                      className="inline-block text-blue-600 hover:text-blue-800 font-medium text-sm border border-blue-200 px-3 py-1.5 rounded hover:bg-blue-50 whitespace-nowrap"
-                    >
-                      수정/조회
-                    </Link>
+                    <div className="flex items-center justify-center gap-2 flex-nowrap">
+                      <Link
+                        href={`/estimate/${est.id}`}
+                        className="inline-block text-blue-600 hover:text-blue-800 font-medium text-sm border border-blue-200 px-3 py-1.5 rounded hover:bg-blue-50 whitespace-nowrap"
+                      >
+                        수정/조회
+                      </Link>
+                      <DeleteQuoteButton id={Number(est.id)} />
+                    </div>
                   </td>
                 </tr>
               ))

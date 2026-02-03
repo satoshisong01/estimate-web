@@ -62,12 +62,21 @@ interface ImageTab {
   url: string;
 }
 
+/** 이미지 탭 또는 산출내역서(세부) 탭 */
+interface ExtraTab {
+  id: string;
+  type: 'image' | 'detail';
+  label: string;
+  url?: string;
+  items?: EstimateItem[];
+}
+
 interface EditorProps {
   initialData?: any;
 }
 
 interface ImageSectionProps {
-  tabData: ImageTab;
+  tabData: { id: string; label: string; url: string };
   isActive: boolean;
   isPrintChecked: boolean;
   onDelete: () => void;
@@ -80,12 +89,14 @@ export default function EstimateEditor({ initialData }: EditorProps) {
   const [coverLabel, setCoverLabel] = useState('1. 견적서(표지)');
   const [detailLabel, setDetailLabel] = useState('2. 산출내역서');
 
-  const [imageTabs, setImageTabs] = useState<ImageTab[]>([
-    { id: 'layout', label: '3. 배치도', url: '' },
-    { id: 'component', label: '4. 주요구성품', url: '' },
-    { id: 'maintenance', label: '5. 유지관리', url: '' },
-    { id: 'schedule', label: '6. 추진일정', url: '' },
-  ]);
+  const defaultExtraTabs: ExtraTab[] = [
+    { id: 'layout', type: 'image', label: '3. 배치도', url: '' },
+    { id: 'component', type: 'image', label: '4. 주요구성품', url: '' },
+    { id: 'maintenance', type: 'image', label: '5. 유지관리', url: '' },
+    { id: 'schedule', type: 'image', label: '6. 추진일정', url: '' },
+  ];
+  const [extraTabs, setExtraTabs] = useState<ExtraTab[]>(defaultExtraTabs);
+  const [showAddTabMenu, setShowAddTabMenu] = useState(false);
 
   const [activeTabId, setActiveTabId] = useState<string>('cover');
 
@@ -130,10 +141,10 @@ export default function EstimateEditor({ initialData }: EditorProps) {
   useEffect(() => {
     if (initialData?.items) {
       const mains = initialData.items.filter(
-        (i: any) => !i.section || i.section === 'main',
+        (i: any) => !i.section || i.section === 'main'
       );
       const details = initialData.items.filter(
-        (i: any) => i.section === 'detail',
+        (i: any) => i.section === 'detail'
       );
 
       setMainItems(
@@ -150,7 +161,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                 unitPrice: 0,
                 remarks: '',
               },
-            ],
+            ]
       );
       setDetailItems(
         details.length > 0
@@ -166,7 +177,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                 unitPrice: 0,
                 remarks: '',
               },
-            ],
+            ]
       );
     } else {
       setMainItems([
@@ -202,49 +213,71 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           setCoverLabel(
             memoObj.tabConfig.coverLabel ||
               memoObj.tabConfig.coverTabLabel ||
-              '1. 견적서(표지)',
+              '1. 견적서(표지)'
           );
           setDetailLabel(
             memoObj.tabConfig.detailLabel ||
               memoObj.tabConfig.detailTabLabel ||
-              '2. 산출내역서',
+              '2. 산출내역서'
           );
 
-          if (memoObj.tabConfig.imageTabs) {
-            setImageTabs(memoObj.tabConfig.imageTabs);
+          if (memoObj.tabConfig.extraTabs) {
+            setExtraTabs(memoObj.tabConfig.extraTabs);
             const newPrintOpts: Record<string, boolean> = {
               cover: true,
               detail: true,
             };
-            memoObj.tabConfig.imageTabs.forEach((tab: ImageTab) => {
+            memoObj.tabConfig.extraTabs.forEach((tab: ExtraTab) => {
+              newPrintOpts[tab.id] = true;
+            });
+            setPrintOptions((prev) => ({ ...prev, ...newPrintOpts }));
+          } else if (memoObj.tabConfig.imageTabs) {
+            const tabs: ExtraTab[] = memoObj.tabConfig.imageTabs.map(
+              (t: ImageTab) => ({
+                id: t.id,
+                type: 'image' as const,
+                label: t.label,
+                url: t.url || '',
+              })
+            );
+            setExtraTabs(tabs);
+            const newPrintOpts: Record<string, boolean> = {
+              cover: true,
+              detail: true,
+            };
+            tabs.forEach((tab) => {
               newPrintOpts[tab.id] = true;
             });
             setPrintOptions((prev) => ({ ...prev, ...newPrintOpts }));
           }
         } else {
-          const legacyTabs = [
+          const legacyTabs: ExtraTab[] = [
             {
               id: 'layout',
+              type: 'image',
               label: '3. 배치도',
               url: initialData.image_layout || '',
             },
             {
               id: 'component',
+              type: 'image',
               label: '4. 주요구성품',
               url: initialData.image_component || '',
             },
             {
               id: 'maintenance',
+              type: 'image',
               label: '5. 유지관리',
               url: initialData.image_maintenance || '',
             },
             {
               id: 'schedule',
+              type: 'image',
               label: '6. 추진일정',
               url: initialData.image_schedule || '',
             },
           ];
-          setImageTabs(legacyTabs);
+          setExtraTabs(legacyTabs);
         }
       } catch (e) {
         console.error('Memo parse error', e);
@@ -263,15 +296,63 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     return `FIRST${year}${month}${day}-01`;
   };
 
-  const [total, setTotal] = useState(0);
+  /** 탭 라벨에서 구분용 이름 추출 (예: "2. 산출내역서" → "산출내역서") */
+  const getCategoryFromLabel = (label: string) => {
+    const m = label.match(/^\d+\.\s*(.+)$/);
+    return m ? m[1].trim() : label.trim();
+  };
 
-  useEffect(() => {
-    const sum = mainItems.reduce(
-      (acc, item) => acc + Number(item.quantity) * Number(item.unitPrice),
-      0,
+  const detailTotal = detailItems.reduce(
+    (acc, item) => acc + Number(item.quantity) * Number(item.unitPrice),
+    0
+  );
+  const extraDetailTotals = extraTabs
+    .filter((t) => t.type === 'detail' && t.items)
+    .map((t) =>
+      (t.items || []).reduce(
+        (acc, item) => acc + Number(item.quantity) * Number(item.unitPrice),
+        0
+      )
     );
-    setTotal(sum);
-  }, [mainItems]);
+  const coverSyntheticRows: EstimateItem[] = [
+    {
+      category: getCategoryFromLabel(detailLabel),
+      name: '',
+      spec: '',
+      unit: '식',
+      quantity: 1,
+      unitPrice: detailTotal,
+      remarks: '',
+    },
+    ...extraTabs
+      .filter((t) => t.type === 'detail' && t.items)
+      .map(
+        (t) =>
+          ({
+            category: getCategoryFromLabel(t.label),
+            name: '',
+            spec: '',
+            unit: '식',
+            quantity: 1,
+            unitPrice: (t.items || []).reduce(
+              (acc, item) =>
+                acc + Number(item.quantity) * Number(item.unitPrice),
+              0
+            ),
+            remarks: '',
+          } as EstimateItem)
+      ),
+  ];
+  /** 산출내역서 합산 행을 맨 위에, 그 다음 수동 입력 행 */
+  const coverDisplayRows = [...coverSyntheticRows, ...mainItems];
+
+  const total =
+    mainItems.reduce(
+      (acc, item) => acc + Number(item.quantity) * Number(item.unitPrice),
+      0
+    ) +
+    detailTotal +
+    extraDetailTotals.reduce((a, b) => a + b, 0);
 
   const handleHeaderChange = (e: any) =>
     setHeader({ ...header, [e.target.name]: e.target.value });
@@ -280,7 +361,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     isDetail: boolean,
     index: number,
     field: keyof EstimateItem,
-    value: any,
+    value: any
   ) => {
     const targetItems = isDetail ? [...detailItems] : [...mainItems];
     const setTarget = isDetail ? setDetailItems : setMainItems;
@@ -312,22 +393,53 @@ export default function EstimateEditor({ initialData }: EditorProps) {
   };
 
   const addImageTab = () => {
-    const newId = `custom_${Date.now()}`;
-    const newTab: ImageTab = {
+    setShowAddTabMenu(false);
+    const newId = `img_${Date.now()}`;
+    const newTab: ExtraTab = {
       id: newId,
+      type: 'image',
       label: '새 탭',
       url: '',
     };
-    setImageTabs([...imageTabs, newTab]);
-    setPrintOptions({ ...printOptions, [newId]: true });
+    setExtraTabs((prev) => [...prev, newTab]);
+    setPrintOptions((prev) => ({ ...prev, [newId]: true }));
     setActiveTabId(newId);
   };
 
-  const removeImageTab = (e: React.MouseEvent, idToRemove: string) => {
+  const addDetailSheet = () => {
+    setShowAddTabMenu(false);
+    const newId = `detail_${Date.now()}`;
+    const newTab: ExtraTab = {
+      id: newId,
+      type: 'detail',
+      label: '산출내역서',
+      items: [
+        {
+          section: 'detail',
+          category: '',
+          name: '',
+          spec: '',
+          unit: '',
+          quantity: 0,
+          unitPrice: 0,
+          remarks: '',
+        },
+      ],
+    };
+    setExtraTabs((prev) => [...prev, newTab]);
+    setPrintOptions((prev) => ({ ...prev, [newId]: true }));
+    setActiveTabId(newId);
+  };
+
+  const removeExtraTab = (e: React.MouseEvent, idToRemove: string) => {
     e.stopPropagation();
-    if (confirm('정말 이 탭을 삭제하시겠습니까? (이미지도 함께 삭제됩니다)')) {
-      const filtered = imageTabs.filter((t) => t.id !== idToRemove);
-      setImageTabs(filtered);
+    const tab = extraTabs.find((t) => t.id === idToRemove);
+    const msg =
+      tab?.type === 'detail'
+        ? '정말 이 산출내역서 탭을 삭제하시겠습니까?'
+        : '정말 이 탭을 삭제하시겠습니까? (이미지도 함께 삭제됩니다)';
+    if (confirm(msg)) {
+      setExtraTabs((prev) => prev.filter((t) => t.id !== idToRemove));
       if (activeTabId === idToRemove) {
         setActiveTabId('cover');
       }
@@ -338,10 +450,8 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     if (id === 'cover') setCoverLabel(newLabel);
     else if (id === 'detail') setDetailLabel(newLabel);
     else {
-      setImageTabs(
-        imageTabs.map((tab) =>
-          tab.id === id ? { ...tab, label: newLabel } : tab,
-        ),
+      setExtraTabs((prev) =>
+        prev.map((tab) => (tab.id === id ? { ...tab, label: newLabel } : tab))
       );
     }
   };
@@ -356,15 +466,71 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       });
       const data = await res.json();
       if (data.success) {
-        setImageTabs(
-          imageTabs.map((tab) =>
-            tab.id === tabId ? { ...tab, url: data.url } : tab,
-          ),
+        setExtraTabs((prev) =>
+          prev.map((tab) =>
+            tab.id === tabId && tab.type === 'image'
+              ? { ...tab, url: data.url }
+              : tab
+          )
         );
       }
     } catch (err) {
       alert('업로드 실패');
     }
+  };
+
+  const handleExtraDetailItemChange = (
+    tabId: string,
+    index: number,
+    field: keyof EstimateItem,
+    value: unknown
+  ) => {
+    setExtraTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id !== tabId || tab.type !== 'detail' || !tab.items) return tab;
+        const next = [...tab.items];
+        next[index] = { ...next[index], [field]: value };
+        return { ...tab, items: next };
+      })
+    );
+  };
+
+  const addExtraDetailItem = (tabId: string) => {
+    setExtraTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id !== tabId || tab.type !== 'detail') return tab;
+        const items = tab.items || [];
+        return {
+          ...tab,
+          items: [
+            ...items,
+            {
+              section: 'detail',
+              category: '',
+              name: '',
+              spec: '',
+              unit: '',
+              quantity: 0,
+              unitPrice: 0,
+              remarks: '',
+            },
+          ],
+        };
+      })
+    );
+  };
+
+  const removeExtraDetailItem = (tabId: string, index: number) => {
+    setExtraTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id !== tabId || tab.type !== 'detail' || !tab.items) return tab;
+        if (tab.items.length <= 1) return tab;
+        return {
+          ...tab,
+          items: tab.items.filter((_, i) => i !== index),
+        };
+      })
+    );
   };
 
   const handleSave = async () => {
@@ -377,10 +543,16 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       : '/api/estimate/save';
     const method = isEditMode ? 'PUT' : 'POST';
 
+    const imageTabList = extraTabs.filter((t) => t.type === 'image');
     const tabConfig = {
       coverLabel,
       detailLabel,
-      imageTabs,
+      extraTabs,
+      imageTabs: imageTabList.map((t) => ({
+        id: t.id,
+        label: t.label,
+        url: t.url || '',
+      })),
     };
 
     try {
@@ -393,10 +565,10 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           totalAmount: total,
           vat: Math.floor(total * 0.1),
           grandTotal: Math.floor(total * 1.1),
-          imageLayout: imageTabs[0]?.url || '',
-          imageComponent: imageTabs[1]?.url || '',
-          imageMaintenance: imageTabs[2]?.url || '',
-          imageSchedule: imageTabs[3]?.url || '',
+          imageLayout: imageTabList[0]?.url || '',
+          imageComponent: imageTabList[1]?.url || '',
+          imageMaintenance: imageTabList[2]?.url || '',
+          imageSchedule: imageTabList[3]?.url || '',
           memo: JSON.stringify({
             deliveryDate: header.deliveryDate,
             expiryDate: header.expiryDate,
@@ -426,182 +598,219 @@ export default function EstimateEditor({ initialData }: EditorProps) {
     return `${screenClass} ${printClass}`;
   };
 
-  const renderTable = (items: EstimateItem[], isDetail: boolean) => (
-    <div className="w-full mb-4">
-      <table className="w-full border-collapse border border-black text-[12px]">
-        <thead className="bg-gray-100 print:bg-transparent">
-          <tr>
-            {/* ▼ [수정] 열 간격 최적화 (규격 최대화, 단위/수량 최소화) ▼ */}
-            <th className="border border-black p-1 w-8">No</th>
-            <th className="border border-black p-1 w-24">
-              {isDetail ? '품명' : '구 분'}
-            </th>
-            <th className="border border-black p-1">규 격</th>
-            {/* Width 지정 안 함 -> 남은 공간 최대 차지 */}
-            <th className="border border-black p-1 w-10">단위</th> {/* 작게 */}
-            <th className="border border-black p-1 w-14">수량</th> {/* 작게 */}
-            <th className="border border-black p-1 w-24">단가</th>
-            <th className="border border-black p-1 w-24">금 액</th>
-            <th className="border border-black p-1 w-24">비고</th>
-            {/* 적당한 고정 너비 */}
-            <th className="border border-black p-1 w-8 no-print">삭제</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item, idx) => (
-            <tr key={idx}>
-              <td className="border border-gray-400 p-1 text-center">
-                {idx + 1}
-              </td>
-              <td className="border border-gray-400 p-0">
-                <input
-                  className={`w-full p-1 outline-none bg-transparent ${!isDetail ? 'text-center font-bold' : ''}`}
-                  value={isDetail ? item.name : item.category}
-                  onChange={(e) =>
-                    handleItemChange(
-                      isDetail,
-                      idx,
-                      isDetail ? 'name' : 'category',
-                      e.target.value,
-                    )
-                  }
-                  placeholder=""
-                />
-              </td>
-              <td className="border border-gray-400 p-0">
-                <input
-                  className="w-full p-1 outline-none bg-transparent"
-                  value={item.spec}
-                  onChange={(e) =>
-                    handleItemChange(isDetail, idx, 'spec', e.target.value)
-                  }
-                />
-              </td>
-              <td className="border border-gray-400 p-0">
-                <input
-                  className="w-full p-1 outline-none text-center bg-transparent"
-                  value={item.unit}
-                  onChange={(e) =>
-                    handleItemChange(isDetail, idx, 'unit', e.target.value)
-                  }
-                />
-              </td>
-              <td className="border border-gray-400 p-0">
-                <input
-                  type="text"
-                  className="w-full p-1 outline-none text-right bg-transparent"
-                  value={
-                    item.quantity === 0 ? '' : item.quantity.toLocaleString()
-                  }
-                  onChange={(e) =>
-                    handleItemChange(
-                      isDetail,
-                      idx,
-                      'quantity',
-                      parseNumber(e.target.value),
-                    )
-                  }
-                  placeholder="0"
-                />
-              </td>
-              <td className="border border-gray-400 p-0">
-                <input
-                  type="text"
-                  className="w-full p-1 outline-none text-right bg-transparent"
-                  value={
-                    item.unitPrice === 0 ? '' : item.unitPrice.toLocaleString()
-                  }
-                  onChange={(e) =>
-                    handleItemChange(
-                      isDetail,
-                      idx,
-                      'unitPrice',
-                      parseNumber(e.target.value),
-                    )
-                  }
-                  placeholder="0"
-                />
-              </td>
-              <td className="border border-gray-400 p-1 text-right font-medium">
-                {(item.quantity * item.unitPrice).toLocaleString()}
-              </td>
-              <td className="border border-gray-400 p-0">
-                <input
-                  className="w-full p-1 outline-none bg-transparent"
-                  value={item.remarks}
-                  onChange={(e) =>
-                    handleItemChange(isDetail, idx, 'remarks', e.target.value)
-                  }
-                />
-              </td>
-              <td className="border border-gray-400 p-1 text-center no-print">
-                <button
-                  onClick={() => removeItem(isDetail, idx)}
-                  className="text-red-500 font-bold"
+  const renderTable = (
+    items: EstimateItem[],
+    isDetail: boolean,
+    options?: {
+      /** 합산 행이 뒤에 올 때: 이 인덱스 이상이 합산(읽기전용) */
+      syntheticStartIndex?: number;
+      /** 합산 행이 앞에 올 때: 이 인덱스 미만이 합산(읽기전용) */
+      syntheticEndIndex?: number;
+      onAddItem?: () => void;
+      onRemoveItem?: (index: number) => void;
+      onItemChange?: (
+        index: number,
+        field: keyof EstimateItem,
+        value: unknown
+      ) => void;
+    }
+  ) => {
+    const syntheticStart = options?.syntheticStartIndex ?? -1;
+    const syntheticEnd = options?.syntheticEndIndex ?? -1;
+    const addCb = options?.onAddItem ?? (() => addItem(isDetail));
+    const removeCb =
+      options?.onRemoveItem ?? ((idx: number) => removeItem(isDetail, idx));
+    const changeCb =
+      options?.onItemChange ??
+      ((idx: number, field: keyof EstimateItem, value: unknown) =>
+        handleItemChange(isDetail, idx, field, value));
+    return (
+      <div className="w-full mb-4">
+        <table className="w-full border-collapse border border-black text-[12px]">
+          <thead className="bg-gray-100 print:bg-transparent">
+            <tr>
+              <th className="border border-black p-1 w-8">No</th>
+              <th className="border border-black p-1 w-24">
+                {isDetail ? '품명' : '구 분'}
+              </th>
+              <th className="border border-black p-1">규 격</th>
+              <th className="border border-black p-1 w-10">단위</th>
+              <th className="border border-black p-1 w-14">수량</th>
+              <th className="border border-black p-1 w-24">단가</th>
+              <th className="border border-black p-1 w-24">금 액</th>
+              <th className="border border-black p-1 w-24">비고</th>
+              <th className="border border-black p-1 w-8 no-print">삭제</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => {
+              const isSynthetic =
+                (syntheticEnd >= 0 && idx < syntheticEnd) ||
+                (syntheticStart >= 0 && idx >= syntheticStart);
+              return (
+                <tr key={idx}>
+                  <td className="border border-gray-400 p-1 text-center">
+                    {idx + 1}
+                  </td>
+                  <td className="border border-gray-400 p-0">
+                    <input
+                      className={`w-full p-1 outline-none bg-transparent ${
+                        !isDetail ? 'text-center font-bold' : ''
+                      }`}
+                      value={isDetail ? item.name : item.category}
+                      onChange={(e) =>
+                        !isSynthetic &&
+                        changeCb(
+                          idx,
+                          isDetail ? 'name' : 'category',
+                          e.target.value
+                        )
+                      }
+                      readOnly={isSynthetic}
+                      placeholder=""
+                    />
+                  </td>
+                  <td className="border border-gray-400 p-0">
+                    <input
+                      className="w-full p-1 outline-none bg-transparent"
+                      value={item.spec}
+                      onChange={(e) =>
+                        !isSynthetic && changeCb(idx, 'spec', e.target.value)
+                      }
+                      readOnly={isSynthetic}
+                    />
+                  </td>
+                  <td className="border border-gray-400 p-0">
+                    <input
+                      className="w-full p-1 outline-none text-center bg-transparent"
+                      value={item.unit}
+                      onChange={(e) =>
+                        !isSynthetic && changeCb(idx, 'unit', e.target.value)
+                      }
+                      readOnly={isSynthetic}
+                    />
+                  </td>
+                  <td className="border border-gray-400 p-0">
+                    <input
+                      type="text"
+                      className="w-full p-1 outline-none text-right bg-transparent"
+                      value={
+                        item.quantity === 0
+                          ? ''
+                          : item.quantity.toLocaleString()
+                      }
+                      onChange={(e) =>
+                        !isSynthetic &&
+                        changeCb(idx, 'quantity', parseNumber(e.target.value))
+                      }
+                      readOnly={isSynthetic}
+                      placeholder="0"
+                    />
+                  </td>
+                  <td className="border border-gray-400 p-0">
+                    <input
+                      type="text"
+                      className="w-full p-1 outline-none text-right bg-transparent"
+                      value={
+                        item.unitPrice === 0
+                          ? ''
+                          : item.unitPrice.toLocaleString()
+                      }
+                      onChange={(e) =>
+                        !isSynthetic &&
+                        changeCb(idx, 'unitPrice', parseNumber(e.target.value))
+                      }
+                      readOnly={isSynthetic}
+                      placeholder="0"
+                    />
+                  </td>
+                  <td className="border border-gray-400 p-1 text-right font-medium">
+                    {(item.quantity * item.unitPrice).toLocaleString()}
+                  </td>
+                  <td className="border border-gray-400 p-0">
+                    <input
+                      className="w-full p-1 outline-none bg-transparent"
+                      value={item.remarks}
+                      onChange={(e) =>
+                        !isSynthetic && changeCb(idx, 'remarks', e.target.value)
+                      }
+                      readOnly={isSynthetic}
+                    />
+                  </td>
+                  <td className="border border-gray-400 p-1 text-center no-print">
+                    {!isSynthetic ? (
+                      <button
+                        onClick={() => removeCb(idx)}
+                        className="text-red-500 font-bold"
+                      >
+                        X
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {!isDetail &&
+              items.length < 3 &&
+              Array.from({ length: 3 - items.length }).map((_, i) => (
+                <tr key={`empty-${i}`}>
+                  <td className="border border-gray-400 p-1">&nbsp;</td>
+                  <td className="border border-gray-400 p-1" colSpan={7}></td>
+                  <td className="border border-gray-400 p-1 no-print"></td>
+                </tr>
+              ))}
+          </tbody>
+          {!isDetail && (
+            <tfoot className="print:table-footer-group">
+              <tr className="bg-gray-50 print:bg-transparent font-bold">
+                <td
+                  colSpan={6}
+                  className="border border-black p-1 text-center tracking-widest"
                 >
-                  X
-                </button>
-              </td>
-            </tr>
-          ))}
-          {!isDetail &&
-            items.length < 5 &&
-            Array.from({ length: 5 - items.length }).map((_, i) => (
-              <tr key={`empty-${i}`}>
-                <td className="border border-gray-400 p-1">&nbsp;</td>
-                <td className="border border-gray-400 p-1" colSpan={7}></td>
-                <td className="border border-gray-400 p-1 no-print"></td>
+                  합 계
+                </td>
+                <td className="border border-black p-1 text-right">
+                  {total.toLocaleString()}
+                </td>
+                <td className="border border-black p-1 text-center text-xs">
+                  (VAT 별도)
+                </td>
+                <td className="border border-black no-print"></td>
               </tr>
-            ))}
-        </tbody>
-        {!isDetail && (
-          <tfoot className="print:table-footer-group">
-            <tr className="bg-gray-50 print:bg-transparent font-bold">
-              <td
-                colSpan={6}
-                className="border border-black p-1 text-center tracking-widest"
-              >
-                합 계
-              </td>
-              <td className="border border-black p-1 text-right">
-                {total.toLocaleString()}
-              </td>
-              <td className="border border-black p-1 text-center text-xs">
-                (VAT 별도)
-              </td>
-              <td className="border border-black no-print"></td>
-            </tr>
-            <tr className="bg-yellow-50 print:bg-transparent font-extrabold text-lg">
-              <td
-                colSpan={6}
-                className="border border-black p-2 text-center tracking-widest text-[16px]"
-              >
-                최종 합계
-              </td>
-              <td className="border border-black p-2">
-                <div className="flex items-center justify-end text-[16px] whitespace-nowrap">
-                  <span className="mr-1">₩</span>
-                  <span>{total.toLocaleString()}</span>
-                </div>
-              </td>
-              <td className="border border-black p-2 text-center text-sm">
-                부가세 별도
-              </td>
-              <td className="border border-black no-print"></td>
-            </tr>
-          </tfoot>
-        )}
-      </table>
-      <div className="text-center no-print">
-        <button
-          onClick={() => addItem(isDetail)}
-          className="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700 mt-2 shadow"
-        >
-          + 행 추가
-        </button>
+              <tr className="bg-yellow-50 print:bg-transparent font-extrabold text-lg">
+                <td
+                  colSpan={6}
+                  className="border border-black p-2 text-center tracking-widest text-[16px]"
+                >
+                  최종 합계
+                </td>
+                <td className="border border-black p-2">
+                  <div className="flex items-center justify-end text-[16px] whitespace-nowrap">
+                    <span className="mr-1">₩</span>
+                    <span>{total.toLocaleString()}</span>
+                  </div>
+                </td>
+                <td className="border border-black p-2 text-center text-sm">
+                  부가세 별도
+                </td>
+                <td className="border border-black no-print"></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+        <div className="text-center no-print">
+          <button
+            onClick={addCb}
+            className="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700 mt-2 shadow"
+          >
+            + 행 추가
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const ImageSection = ({
     tabData,
@@ -628,7 +837,11 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
     return (
       <div
-        className={`break-before-page ${isActive ? 'block' : 'hidden'} ${isPrintChecked ? 'print:block print-visible' : 'print:hidden print-hidden'}`}
+        className={`break-before-page ${isActive ? 'block' : 'hidden'} ${
+          isPrintChecked
+            ? 'print:block print-visible'
+            : 'print:hidden print-hidden'
+        }`}
       >
         <div
           className={`p-8 h-full min-h-[900px] flex flex-col items-center ${styles.paperBorder} relative`}
@@ -663,7 +876,11 @@ export default function EstimateEditor({ initialData }: EditorProps) {
             </div>
           ) : (
             <div
-              className={`w-full flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-lg transition-colors z-10 ${isDragging ? 'border-blue-500 text-blue-500' : 'border-gray-300 text-gray-500'}`}
+              className={`w-full flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-lg transition-colors z-10 ${
+                isDragging
+                  ? 'border-blue-500 text-blue-500'
+                  : 'border-gray-300 text-gray-500'
+              }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -719,13 +936,21 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         <div className="flex flex-wrap gap-2 items-center">
           {/* 고정 탭 1 */}
           <div
-            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${activeTabId === 'cover' ? 'border-blue-500 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}
+            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${
+              activeTabId === 'cover'
+                ? 'border-blue-500 bg-blue-50'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
           >
             <input
               value={coverLabel}
               onChange={(e) => setCoverLabel(e.target.value)}
               onClick={() => setActiveTabId('cover')}
-              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${activeTabId === 'cover' ? 'font-bold text-blue-700' : 'text-gray-600'}`}
+              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${
+                activeTabId === 'cover'
+                  ? 'font-bold text-blue-700'
+                  : 'text-gray-600'
+              }`}
             />
             <input
               type="checkbox"
@@ -738,13 +963,21 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           </div>
           {/* 고정 탭 2 */}
           <div
-            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${activeTabId === 'detail' ? 'border-blue-500 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}
+            className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${
+              activeTabId === 'detail'
+                ? 'border-blue-500 bg-blue-50'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
           >
             <input
               value={detailLabel}
               onChange={(e) => setDetailLabel(e.target.value)}
               onClick={() => setActiveTabId('detail')}
-              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${activeTabId === 'detail' ? 'font-bold text-blue-700' : 'text-gray-600'}`}
+              className={`mr-2 text-sm bg-transparent outline-none w-auto min-w-[80px] cursor-pointer ${
+                activeTabId === 'detail'
+                  ? 'font-bold text-blue-700'
+                  : 'text-gray-600'
+              }`}
             />
             <input
               type="checkbox"
@@ -755,17 +988,25 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               className="w-4 h-4 cursor-pointer"
             />
           </div>
-          {/* 동적 탭 */}
-          {imageTabs.map((tab) => (
+          {/* 동적 탭 (이미지 / 산출내역서) */}
+          {extraTabs.map((tab) => (
             <div
               key={tab.id}
-              className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${activeTabId === tab.id ? 'border-blue-500 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex items-center border rounded px-3 py-2 cursor-pointer bg-white ${
+                activeTabId === tab.id
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
             >
               <input
                 value={tab.label}
                 onChange={(e) => updateTabLabel(tab.id, e.target.value)}
                 onClick={() => setActiveTabId(tab.id)}
-                className={`mr-2 text-sm bg-transparent outline-none w-24 cursor-pointer ${activeTabId === tab.id ? 'font-bold text-blue-700' : 'text-gray-600'}`}
+                className={`mr-2 text-sm bg-transparent outline-none w-24 cursor-pointer ${
+                  activeTabId === tab.id
+                    ? 'font-bold text-blue-700'
+                    : 'text-gray-600'
+                }`}
               />
               <input
                 type="checkbox"
@@ -779,20 +1020,40 @@ export default function EstimateEditor({ initialData }: EditorProps) {
                 className="w-4 h-4 cursor-pointer mr-2"
               />
               <button
-                onClick={(e) => removeImageTab(e, tab.id)}
+                onClick={(e) => removeExtraTab(e, tab.id)}
                 className="text-red-400 hover:text-red-600 font-bold px-1 text-xs"
               >
                 ✕
               </button>
             </div>
           ))}
-          <button
-            onClick={addImageTab}
-            className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 font-bold shadow-sm"
-            title="새 탭 추가"
-          >
-            ＋
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowAddTabMenu((v) => !v)}
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 font-bold shadow-sm"
+              title="새 탭 추가"
+            >
+              ＋
+            </button>
+            {showAddTabMenu && (
+              <div className="absolute top-full left-0 mt-1 py-1 bg-white border rounded shadow-lg z-50 min-w-[140px]">
+                <button
+                  type="button"
+                  onClick={addImageTab}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                >
+                  이미지 업로드
+                </button>
+                <button
+                  type="button"
+                  onClick={addDetailSheet}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                >
+                  산출내역서(세부내역)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -806,7 +1067,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           <img
             src="/logo.png"
             alt="logo"
-            className="absolute top-10 right-10 w-32 z-0 opacity-80"
+            className="absolute top-15 right-10 w-32 z-0 opacity-80"
           />
 
           <div className="relative z-10">
@@ -1028,7 +1289,23 @@ export default function EstimateEditor({ initialData }: EditorProps) {
               </div>
             </div>
 
-            {renderTable(mainItems, false)}
+            {renderTable(coverDisplayRows, false, {
+              syntheticEndIndex: coverSyntheticRows.length,
+              onAddItem: () => addItem(false),
+              onRemoveItem: (idx) => {
+                if (idx >= coverSyntheticRows.length)
+                  removeItem(false, idx - coverSyntheticRows.length);
+              },
+              onItemChange: (idx, field, value) => {
+                if (idx >= coverSyntheticRows.length)
+                  handleItemChange(
+                    false,
+                    idx - coverSyntheticRows.length,
+                    field,
+                    value
+                  );
+              },
+            })}
           </div>
 
           {/* ▼▼▼ [수정] mt-4 -> mt-1 (위로 올림), 내부 패딩 및 글자 크기 축소 ▼▼▼ */}
@@ -1075,7 +1352,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
           <img
             src="/logo.png"
             alt="logo"
-            className="absolute top-10 right-10 w-32 z-0 opacity-80"
+            className="absolute top-15 right-10 w-32 z-0 opacity-80"
           />
 
           <div className="text-center mb-8 mt-4 relative z-10">
@@ -1092,21 +1369,59 @@ export default function EstimateEditor({ initialData }: EditorProps) {
         </div>
       </div>
 
-      {/* 3. 동적 이미지 섹션들 (이미지 섹션 컴포넌트 내부에 로고가 포함되어 있음) */}
-      {imageTabs.map((tab) => (
-        <ImageSection
-          key={tab.id}
-          tabData={tab}
-          isActive={activeTabId === tab.id}
-          isPrintChecked={printOptions[tab.id] ?? true}
-          onDelete={() =>
-            setImageTabs(
-              imageTabs.map((t) => (t.id === tab.id ? { ...t, url: '' } : t)),
-            )
-          }
-          onUpload={(file) => handleFileUpload(file, tab.id)}
-        />
-      ))}
+      {/* 3. 동적 탭: 이미지 업로드 / 산출내역서 */}
+      {extraTabs.map((tab) =>
+        tab.type === 'image' ? (
+          <ImageSection
+            key={tab.id}
+            tabData={{
+              id: tab.id,
+              label: tab.label,
+              url: tab.url || '',
+            }}
+            isActive={activeTabId === tab.id}
+            isPrintChecked={printOptions[tab.id] ?? true}
+            onDelete={() =>
+              setExtraTabs((prev) =>
+                prev.map((t) =>
+                  t.id === tab.id && t.type === 'image' ? { ...t, url: '' } : t
+                )
+              )
+            }
+            onUpload={(file) => handleFileUpload(file, tab.id)}
+          />
+        ) : (
+          <div key={tab.id} className={`${getDisplayClass(tab.id)}`}>
+            <div
+              className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder} relative`}
+            >
+              <img
+                src="/logo.png"
+                alt="logo"
+                className="absolute top-10 right-10 w-32 z-0 opacity-80"
+              />
+              <div className="text-center mb-8 mt-4 relative z-10">
+                <input
+                  value={tab.label}
+                  onChange={(e) => updateTabLabel(tab.id, e.target.value)}
+                  className="text-3xl font-extrabold tracking-widest border-b-2 border-black pb-2 text-center w-full bg-transparent outline-none cursor-text"
+                />
+              </div>
+              <div className="text-right text-sm mb-1 font-bold relative z-10">
+                [단위: 원 / VAT 별도]
+              </div>
+              <div className="relative z-10">
+                {renderTable(tab.items || [], true, {
+                  onAddItem: () => addExtraDetailItem(tab.id),
+                  onRemoveItem: (idx) => removeExtraDetailItem(tab.id, idx),
+                  onItemChange: (idx, field, value) =>
+                    handleExtraDetailItemChange(tab.id, idx, field, value),
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      )}
     </div>
   );
 }

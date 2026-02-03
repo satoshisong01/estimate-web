@@ -6,7 +6,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 // 1. 수정하기 (PUT)
 export async function PUT(
   req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
@@ -16,7 +16,7 @@ export async function PUT(
 
     const userResult = await executeQuery(
       'SELECT id FROM est_users WHERE email = $1',
-      [session.user.email],
+      [session.user.email]
     );
     const userId = userResult[0]?.id;
 
@@ -61,13 +61,13 @@ export async function PUT(
         imageMaintenance,
         imageSchedule,
         userId, // $14
-      ],
+      ]
     );
 
     // 기존 품목 삭제 후 재등록
     await executeQuery(
       'DELETE FROM est_quotation_items WHERE quotation_id = $1',
-      [id],
+      [id]
     );
 
     if (items && items.length > 0) {
@@ -88,7 +88,7 @@ export async function PUT(
             item.remarks,
             index,
             item.section || 'main',
-          ],
+          ]
         );
       });
       await Promise.all(itemInsertPromises);
@@ -99,24 +99,32 @@ export async function PUT(
     console.error('수정 실패:', error);
     return NextResponse.json(
       { success: false, error: String(error) },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
 
-// 2. 삭제하기 (DELETE) - 기존 유지
+// 2. 삭제하기 (DELETE)
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const { id } = await params;
+    await executeQuery(
+      'DELETE FROM est_quotation_items WHERE quotation_id = $1',
+      [id]
+    );
     await executeQuery('DELETE FROM est_quotations WHERE id = $1', [id]);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: String(error) },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
