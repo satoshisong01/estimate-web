@@ -74,4 +74,16 @@ body {
   .print-hidden {
     display: none !important;
   }
+
+  /* 한 페이지에 한 섹션씩 (견적서 표지, 산출내역서, 추가 탭 모두) */
+  .break-before-page {
+    page-break-before: always;
+  }
+  .break-after-page {
+    page-break-after: always;
+  }
+  /* 마지막 섹션 뒤 빈 페이지 방지 */
+  .break-after-page:last-child {
+    page-break-after: auto !important;
+  }
 }

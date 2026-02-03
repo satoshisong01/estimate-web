@@ -1077,7 +1077,7 @@ export default function EstimateEditor({ initialData }: EditorProps) {
       </div>
 
       {/* 1. 견적서 표지 (Main) */}
-      <div className={`${getDisplayClass('cover')}`}>
+      <div className={`${getDisplayClass('cover')} break-after-page`}>
         <div
           className={`p-10 min-h-[1050px] relative flex flex-col justify-between ${styles.paperBorder}`}
         >
@@ -1379,7 +1379,11 @@ export default function EstimateEditor({ initialData }: EditorProps) {
 
       {/* 2. 산출내역서 (Detail) - detailTabVisible일 때만 표시 */}
       {detailTabVisible && (
-        <div className={`${getDisplayClass('detail')}`}>
+        <div
+          className={`${getDisplayClass(
+            'detail'
+          )} break-before-page break-after-page`}
+        >
           <div
             className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder} relative`}
           >
@@ -1430,7 +1434,12 @@ export default function EstimateEditor({ initialData }: EditorProps) {
             onUpload={(file) => handleFileUpload(file, tab.id)}
           />
         ) : (
-          <div key={tab.id} className={`${getDisplayClass(tab.id)}`}>
+          <div
+            key={tab.id}
+            className={`${getDisplayClass(
+              tab.id
+            )} break-before-page break-after-page`}
+          >
             <div
               className={`p-10 min-h-[1050px] flex flex-col ${styles.paperBorder} relative`}
             >
